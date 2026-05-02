@@ -3,12 +3,7 @@
 source "$DOTFILES/aliases.zsh"
 source $HOME/.local/share/zsh/plugins/local/ascii_font/ascii_font.plugin.zsh
 
-if [[ $(hostname) == 'spider.casraf.dev' || $(hostname) == 'spider' ]]; then
-  text='spider'
-  extra_echo=1
-else
-  text='casraf'
-fi
+text='orrans'
 
 if [[ ! -z $extra_echo ]]; then
   echo

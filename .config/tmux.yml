@@ -24,8 +24,3 @@ df:
   aliases: [dotfiles]
   windows:
     - .
-
-Notes:
-  root: ~/Nextcloud/Notes
-  windows:
-    - ./

@@ -96,4 +96,3 @@ export VISUAL="$EDITOR"
 source "$DOTFILES/aliases.zsh"
 
 [[ ! -f "$CFG/.p10k.zsh" ]] || source "$CFG/.p10k.zsh"
-

@@ -4,9 +4,6 @@
 check_updates: true
 defaults:
   type:
-    brew:
-      platforms:
-        only: ["macos"]
     github-release:
       opts:
         github_token: $GITHUB_TOKEN
@@ -90,10 +87,6 @@ install:
     steps:
       - name: stow
         type: brew
-      - name: stow
-        type: apt
-        platforms:
-          only: ["linux"]
 
   - name: gh
     type: group
@@ -102,25 +95,12 @@ install:
     steps:
       - name: gh
         type: brew
-      - name: gh
-        type: apt
-        platforms:
-          only: ["linux"]
 
   - name: glab
     type: group
     steps:
       - name: glab
         type: brew
-      - name: glab
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: profclems/glab
-          strategy: tar
-          destination: ~/.local/bin
-          download_filename: glab_{{ .Version }}_Linux_{{ .ArchAlias }}.tar.gz
 
   - name: git-config
     type: shell
@@ -128,7 +108,6 @@ install:
     check_installed: (git config --global user.name && git config --global user.email && git config --global user.signingkey) > /dev/null 2>&1
     opts:
       command: |
-        git config --global user.signingkey "~/.ssh/id_casraf.pub"
         git config --global filter.lfs.clean "git-lfs clean -- %f"
         git config --global filter.lfs.smudge "git-lfs smudge -- %f"
         git config --global filter.lfs.process "git-lfs filter-process"
@@ -467,13 +446,6 @@ install:
   - name: delta
     type: group
     steps:
-      - name: delta
-        type: shell
-        platforms:
-          only: ["linux"]
-        opts:
-          command: |
-            curl https://github.com/dandavison/delta/releases/download/0.17.0/git-delta_0.17.0_amd64.deb | dpkg -i
       - name: git-delta
         type: brew
         bin_name: delta
@@ -483,10 +455,6 @@ install:
     steps:
       - name: jq
         type: brew
-      - name: jq
-        type: apt
-        platforms:
-          only: ["linux"]
 
   - name: yq
     type: group
@@ -533,10 +501,6 @@ install:
     steps:
       - name: ffmpeg
         type: brew
-      - name: ffmpeg
-        type: apt
-        platforms:
-          only: ["linux"]
 
   - name: fzf
     type: group
@@ -559,65 +523,18 @@ install:
       - name: fd
         type: brew
       - name: fd-find
-        bin_name: fd
-        type: apt
-        platforms:
-          only: ["linux"]
-
-  - name: aerospace
-    type: group
-    platforms: { only: ["macos"] }
-    steps:
-      - name: borders
-        type: brew
-        skip_summary:
-          install: true
-        opts:
-          tap: FelixKratz/formulae
-      - name: aerospace
-        type: brew
-        post_update: aerospace reload-config
-        opts:
-          tap: nikitabobko/tap
-          cask: true
-      - name: aerospace-config
-        type: shell
-        tags: aerospace-config config aerospace
-        check_installed: test -f $(which aerospace)
-        skip_summary:
-          update: true
-        opts:
-          command: exit 1
-          update_command: aerospace reload-config
-
-  - name: autoraise
-    type: brew
-    platforms:
-      only: ["macos"]
-    post_install: brew services start autoraise
-    post_update: brew services restart autoraise
-    opts:
-      tap: dimentium/autoraise
 
   - name: catimg
     type: group
     steps:
       - name: catimg
         type: brew
-      - name: catimg
-        type: apt
-        platforms:
-          only: ["linux"]
 
   - name: bat
     type: group
     steps:
       - name: bat
         type: brew
-      - name: bat
-        type: apt
-        platforms:
-          only: ["linux"]
 
   - name: pandoc
     type: group
@@ -710,16 +627,6 @@ install:
     steps:
       - name: lefthook
         type: brew
-      - name: lefthook
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: evilmartians/lefthook
-          strategy: none
-          destination: ~/.local/bin
-          download_filename:
-            linux: lefthook_{{ .Version }}_Linux_{{ .Arch }}
 
   # ----------------------------------------------------------------------
   # 💻 Language Runtimes & Package Managers
@@ -731,6 +638,7 @@ install:
 
   - name: fnm
     type: shell
+    enabled: false
     post_install: |
       FNM_PATH="/root/.local/share/fnm"
       if [ -d "$FNM_PATH" ]; then
@@ -757,43 +665,37 @@ install:
   # ----------------------------------------------------------------------
   # 📦 PNPM Ecosystem
   # ----------------------------------------------------------------------
-  # Global CLI tools and utilities installed via pnpm.
+  # Global CLI tools and utilities installed via npm.
 
   # - category: 📦 PNPM Ecosystem
-  #   desc: Global CLI tools and utilities installed via pnpm.
-
-  - name: pnpm
-    type: shell
-    opts:
-      command: npm i -g pnpm
-      update_command: pnpm self-update
+  #   desc: Global CLI tools and utilities installed via npm.
 
   - name: typescript
     bin_name: tsc
-    type: pnpm
+    type: npm
 
   - name: tldr
-    type: pnpm
+    type: npm
 
   - name: simple-scaffold
-    type: pnpm
+    type: npm
 
   - name: firebase-tools
     bin_name: firebase
-    type: pnpm
+    type: npm
 
   - name: prettier
-    type: pnpm
+    type: npm
 
   - name: http-server
-    type: pnpm
+    type: npm
 
   - name: licenseg
-    type: pnpm
+    type: npm
 
   - name: vscode-langservers-extracted
     bin_name: vscode-json-language-server
-    type: pnpm
+    type: npm
 
   # ----------------------------------------------------------------------
   # 🤖 AI
@@ -814,11 +716,11 @@ install:
         post_update: xattr -rd com.apple.quarantine $(which claude)
         opts:
           cask: true
-      - name: "@anthropic-ai/claude-code"
-        bin_name: claude
-        type: pnpm
-        platforms:
-          only: ["linux"]
+      # - name: "@anthropic-ai/claude-code"
+      #   bin_name: claude
+      #   type: npm
+      #   platforms:
+      #     only: ["linux"]
 
   - name: opencode
     type: brew
@@ -826,12 +728,12 @@ install:
 
   - name: "@google/gemini-cli"
     bin_name: gemini
-    type: pnpm
+    type: npm
     enabled: false
 
   - name: "@openai/codex"
     bin_name: codex
-    type: pnpm
+    type: npm
     enabled: false
 
   - name: ollama
@@ -879,11 +781,6 @@ install:
     steps:
       - name: pipx
         type: brew
-
-      - name: pipx
-        type: apt
-        platforms:
-          only: ["linux"]
 
       - name: jedi-language-server
         type: pipx
@@ -949,44 +846,3 @@ install:
     tags: plugin tmux
     opts:
       destination: ~/.tmux/plugins
-
-  # ----------------------------------------------------------------------
-  # 🧭 Desktop Productivity Tools
-  # ----------------------------------------------------------------------
-  # Custom tools and GitHub binaries not installed via a package manager.
-
-  # - category: 🧭 Desktop Productivity Tools
-  #   desc: Custom tools and GitHub binaries not installed via a package manager.
-
-  - name: wezterm
-    type: brew
-    enabled: false
-
-  - name: alacritty
-    type: brew
-    enabled: false
-
-  - name: ghostty
-    type: brew
-    opts:
-      cask: true
-
-  # ----------------------------------------------------------------------
-  # 🆎 Fonts
-  # ----------------------------------------------------------------------
-
-  # - category: 🆎 Fonts
-
-  - name: font-meslo-lg-nerd-font
-    check_installed: fc-list | grep -q "Meslo"
-    type: brew
-    tags: font
-    platforms: { only: ["macos"] }
-    frequency: 26w
-
-  - name: font-fira-code-nerd-font
-    check_installed: fc-list | grep -q "Fira"
-    type: brew
-    tags: font
-    platforms: { only: ["macos"] }
-    frequency: 26w
