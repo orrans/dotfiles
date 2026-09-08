@@ -26,8 +26,6 @@ export DOTBIN="$CFG/bin"
 
 source "$DOTFILES/_plugins/loader.zsh"
 
-wd() { . ~/.local/share/zsh/plugins/wd/wd.sh }
-
 source "$DOTFILES/exports.zsh"
 
 if [[ -t 0 && -t 1 ]]; then
@@ -44,22 +42,9 @@ fi
 export fpath=("$DOTFILES/completions" $fpath)
 zstyle ':completion:*:*:*:*:*' menu select
 
-# bindkey -e
-# Use ESC to edit the current command line:
-# check if edit-command-line not already loaded
-which edit-command-line &>/dev/null
-if [[ $? -ne 0 ]]; then
-  autoload -U edit-command-line
-  zle -N edit-command-line
-fi
+autoload zmv
 
-bindkey '^X' edit-command-line
-bindkey -M viins '^X' edit-command-line
-bindkey -M vicmd '^X' edit-command-line
-
-# back/forward word
-bindkey "^[[1;3C" forward-word
-bindkey "^[[1;3D" backward-word
+source "$DOTFILES/keybindings.zsh"
 
 # Customize word characters for navigation (remove / and = to make them word delimiters)
 if [[ -t 0 ]]; then
@@ -72,27 +57,10 @@ export WORDCHARS='*?[]~&;!#$%^(){}<>'
 # Allow comments on interactive command lines
 setopt interactive_comments
 
-# Uncomment the following line if you want to change the command execution time
-# stamp shown in the history command output.
-# You can set one of the optional three formats:
-# "mm/dd/yyyy"|"dd.mm.yyyy"|"yyyy-mm-dd"
-# or set a custom format using the strftime function format specifications,
-# see 'man strftime' for details.
-# export HIST_STAMPS="%d/%m/%Y %I:%M:%S"
-# export HIST_FIND_NO_DUPS=true
-# setopt histignoredups
-
-# Preferred editor for local and remote sessions
-# if [[ -n $SSH_CONNECTION ]]; then
-#   export EDITOR='nvim'
-# else
-#   export EDITOR='nvim'
-# fi
-
 export VISUAL="$EDITOR"
 
-# tmux source-file "$HOME/.config/tmux/conf.tmux" 2>/dev/null
-
+source "$DOTFILES/dirs.zsh"
 source "$DOTFILES/aliases.zsh"
+source "$DOTFILES/ghostty.zsh"
 
 [[ ! -f "$CFG/.p10k.zsh" ]] || source "$CFG/.p10k.zsh"

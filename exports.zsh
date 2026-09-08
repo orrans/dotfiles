@@ -7,6 +7,10 @@ export MANPATH="$DOTFILES/man:$MANPATH"
 export GITHUB_GPG_KEY_ID="B5690EEEBB952194"
 export EDITOR='nvim'
 
+# Prefer the XDG config dir over ~/Library/Application Support on macOS, so
+# XDG-aware tools (e.g. lazydocker) read their config from ~/.config.
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
 # local bin
 export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/local/sbin:$PATH"
 
@@ -50,6 +54,7 @@ if [[ -d "/opt/homebrew" ]]; then
   fi
 elif [[ -d "/home/linuxbrew/.linuxbrew" ]]; then
   eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+  export BREW_HOME="/home/linuxbrew/.linuxbrew"
 fi
 
 if [[ -d "$HOME/Library/Android/sdk" ]]; then
@@ -80,7 +85,10 @@ if [ -d "$HOME/.local/share/fnm" ]; then
 fi
 if [[ -f $(which fnm) ]]; then
   eval "`fnm env`"
-  fnm default lts-latest
+  # Only set the default alias once. Running this on every startup races when
+  # tmux restores multiple panes at once (each fnm fights over the same
+  # aliases/default symlink -> "File exists (os error 17)").
+  [[ -e "${FNM_PATH:-$HOME/.local/share/fnm}/aliases/default" ]] || fnm default lts-latest
   # fnm() {
   #   unset -f fnm
   #   eval "$(command fnm env)"
@@ -130,9 +138,10 @@ else
   export PNPM_HOME="$HOME/.local/share/pnpm"
 fi
 case ":$PATH:" in
-*":$PNPM_HOME:"*) ;;
-*) export PATH="$PNPM_HOME:$PATH" ;;
+  *":$PNPM_HOME/bin:"*) ;;
+  *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
+# pnpm end
 
 if [[ -f $(which pnpm) ]]; then
   export PATH="$PNPM_HOME:$PATH"
@@ -222,8 +231,28 @@ if [[ ! "$PATH" == */opt/homebrew/opt/fzf/bin* ]]; then
   PATH="${PATH:+${PATH}:}/opt/homebrew/opt/fzf/bin"
 fi
 
+if [[ $(which zoxide) ]]; then
+  eval "$(zoxide init zsh)"
+fi
+
 export SHELLCHECK_OPTS='--shell=bash'
 export DOCKER_CLI_HINTS=false
+
+# Stable SSH agent socket for sudo via pam_ssh_agent_auth.
+# Each SSH connection creates a new $SSH_AUTH_SOCK, but tmux outlives the
+# connection and its panes keep a stale path. Repoint a fixed symlink at the
+# live socket on every login, and use that fixed path inside tmux so panes
+# always reach the current forwarded agent. Only engages on remote hosts.
+if [[ -n "$SSH_CONNECTION" ]]; then
+  STABLE_SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+  if [[ -S "$SSH_AUTH_SOCK" && "$SSH_AUTH_SOCK" != "$STABLE_SSH_AUTH_SOCK" ]]; then
+    ln -sf "$SSH_AUTH_SOCK" "$STABLE_SSH_AUTH_SOCK"
+  fi
+  if [[ -n "$TMUX" && -S "$STABLE_SSH_AUTH_SOCK" ]]; then
+    export SSH_AUTH_SOCK="$STABLE_SSH_AUTH_SOCK"
+  fi
+  unset STABLE_SSH_AUTH_SOCK
+fi
 
 # Auto completion
 # [[ ! -f $BREW_HOME/opt/chruby/share/chruby/chruby.sh ]] || source $BREW_HOME/opt/chruby/share/chruby/chruby.sh

@@ -24,27 +24,27 @@ install:
   # - category: 🧰 Configs & Dotfiles
   #   desc: Installers that sync dotfiles or apply local system configurations.
 
-  - name: tmux-config
-    type: shell
-    tags: config tmux
-    skip_summary: true
-    platforms:
-      only: ["macos", "linux"]
-    opts:
-      command: |
-        if ! tmux source-file "$HOME/.config/tmux/conf.tmux"; then
-          echo "⚠️  Failed to source tmux config"
-        fi
-
   - name: tx-config
     type: shell
     tags: config tmux
-    enabled: test -f "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml"
-    check_installed: test -f ~/.config/tmux_local.yml
-    check_has_update: '! diff -q "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml" ~/.config/tmux_local.yml > /dev/null 2>&1'
+    enabled: test -f "$DOTFILES/.config/tmux_{{ .DeviceIDAlias }}.yml"
+    check_installed: test -e ~/.config/tmux_local.yml && [ "$(readlink "$DOTFILES/.config/tmux_local.yml")" = "tmux_{{ .DeviceIDAlias }}.yml" ]
+    check_has_update: '[ "$(readlink "$DOTFILES/.config/tmux_local.yml" 2>/dev/null)" != "tmux_{{ .DeviceIDAlias }}.yml" ]'
     opts:
-      command: cp "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml" ~/.config/tmux_local.yml
-      update_command: cp "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml" ~/.config/tmux_local.yml
+      command: ln -sfn "tmux_{{ .DeviceIDAlias }}.yml" "$DOTFILES/.config/tmux_local.yml" && stow -R -d "$DOTFILES" -t ~ .
+      update_command: ln -sfn "tmux_{{ .DeviceIDAlias }}.yml" "$DOTFILES/.config/tmux_local.yml" && stow -R -d "$DOTFILES" -t ~ .
+
+  - name: claude-settings
+    type: shell
+    tags: config claude
+    # Regenerate ~/.claude/settings.json by deep-merging settings.local.json
+    # (per-device, untracked) over settings.base.json (shared). Rebuilds only
+    # when either input is newer than the generated output.
+    check_installed: test -f "$DOTFILES/.claude/settings.json" && ! test "$DOTFILES/.claude/settings.base.json" -nt "$DOTFILES/.claude/settings.json" && ! test "$DOTFILES/.claude/settings.local.json" -nt "$DOTFILES/.claude/settings.json"
+    check_has_update: '! test -f "$DOTFILES/.claude/settings.json" || test "$DOTFILES/.claude/settings.base.json" -nt "$DOTFILES/.claude/settings.json" || test "$DOTFILES/.claude/settings.local.json" -nt "$DOTFILES/.claude/settings.json"'
+    opts:
+      command: sh "$DOTFILES/.claude/settings-merge.sh" && stow -R -d "$DOTFILES" -t ~ .
+      update_command: sh "$DOTFILES/.claude/settings-merge.sh" && stow -R -d "$DOTFILES" -t ~ .
 
   - name: osx-defaults
     type: shell
@@ -59,6 +59,46 @@ install:
         defaults write -g PMPrintingExpandedStateForPrint -bool TRUE
         defaults write -g NSScrollViewRubberbanding -bool FALSE
         defaults write cc.ffitch.shottr growingToolbar 1
+
+  - name: linuxbrew-perms
+    type: shell
+    tags: system brew
+    # This box runs a shared, multi-user Homebrew: the prefix is owned by
+    # root:brew and casraf drives it via brew-group membership. That setup
+    # drifts in three ways that break `brew` for a non-root group member —
+    # heal all three. check_installed is the "healthy?" predicate, so the
+    # command only runs when something has actually drifted.
+    machines:
+      only: ["spider"]
+    platforms:
+      only: ["linux"]
+    check_installed: |
+      repo="$(brew --repository 2>/dev/null)" || exit 0
+      pref="$(brew --prefix 2>/dev/null)"
+      [ -n "$repo" ] || exit 0
+      # every root-owned repo must be trusted, else git flags dubious ownership
+      for r in "$repo" "$repo"/Library/Taps/*/*; do
+        [ -d "$r/.git" ] || continue
+        git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$r" || exit 1
+      done
+      # completion dir must stay group-writable, else upgrades that touch it fail
+      if [ -d "$pref/share/zsh/site-functions" ] && [ ! -w "$pref/share/zsh/site-functions" ]; then exit 1; fi
+      # brew refuses to write its trust store when it is group/world writable
+      if [ -d "$HOME/.homebrew" ] && find "$HOME/.homebrew" -maxdepth 0 -perm /022 | grep -q .; then exit 1; fi
+      exit 0
+    opts:
+      command: |
+        repo="$(brew --repository)"
+        pref="$(brew --prefix)"
+        for r in "$repo" "$repo"/Library/Taps/*/*; do
+          [ -d "$r/.git" ] || continue
+          git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$r" || git config --global --add safe.directory "$r"
+        done
+        for d in "$pref/share/zsh" "$pref/share/zsh/site-functions"; do
+          [ -d "$d" ] && [ ! -w "$d" ] && sudo chmod g+w "$d"
+        done
+        [ -d "$HOME/.homebrew" ] && chmod g-w,o-w "$HOME/.homebrew"
+        true
 
   # ----------------------------------------------------------------------
   # 🧾 Git Setup
@@ -83,18 +123,12 @@ install:
       destination: ~/.local/share/zsh/plugins
 
   - name: stow
-    type: group
-    steps:
-      - name: stow
-        type: brew
+    type: brew
 
   - name: gh
-    type: group
+    type: brew
     machines:
       except: ["planck"]
-    steps:
-      - name: gh
-        type: brew
 
   - name: glab
     type: group
@@ -156,162 +190,53 @@ install:
   #   desc: Taps that provide custom tools or host additional formulas.
 
   - name: sofmani
-    type: group
-    steps:
-      - name: sofmani
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: sofmani
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/sofmani
-          destination: ~/.local/bin
-          strategy: tar
-          download_filename: sofmani-linux-{{ .Arch }}.tar.gz
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: vstask
-    type: group
-    steps:
-      - name: vstask
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: vstask
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/vstask
-          destination: ~/.local/bin
-          strategy: tar
-          download_filename: vstask-linux-{{ .Arch }}.tar.gz
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: watchr
-    type: group
-    steps:
-      - name: watchr
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: watchr
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/watchr
-          destination: ~/.local/bin
-          strategy: tar
-          download_filename: watchr-linux-{{ .Arch }}.tar.gz
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: treelike
-    type: group
-    steps:
-      - name: treelike
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: treelike
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/treelike
-          destination: ~/.local/bin
-          download_filename: treelike-linux-{{ .Arch }}.tar.gz
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: gi_gen
-    type: group
-    steps:
-      - name: gi_gen
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: gi_gen
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/gi_gen
-          destination: ~/.local/bin
-          download_filename: gi_gen-{{ .Tag }}-linux-{{ .Arch }}
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: tx
-    type: group
-    steps:
-      - name: tx
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: tx
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/tx
-          destination: ~/.local/bin
-          strategy: tar
-          download_filename: tx-linux-{{ .Arch }}.tar.gz
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: wand
-    type: group
-    steps:
-      - name: wand
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: wand
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/wand
-          destination: ~/.local/bin
-          strategy: tar
-          download_filename: wand-linux-{{ .Arch }}.tar.gz
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: cospend-cli
-    type: group
-    steps:
-      - name: cospend-cli
-        bin_name: cospend
-        type: brew
-        opts:
-          tap: chenasraf/tap
-      - name: cospend-cli
-        bin_name: cospend
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: chenasraf/cospend-cli
-          destination: ~/.local/bin
-          strategy: tar
-          download_filename: cospend-cli-linux-{{ .Arch }}.tar.gz
-          archive_bin_name: cospend-cli
+    bin_name: cospend
+    type: brew
+    opts:
+      tap: chenasraf/tap
 
   - name: direnv-dotenvx
-    type: group
-    steps:
-      - name: direnv-dotenvx
-        check_installed: test -f ~/.config/direnv/lib/use_dotenvx.sh
-        type: brew
-        post_install: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
-        post_update: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
-        opts:
-          tap: chenasraf/tap
-      - name: chenasraf/direnv-dotenvx
-        enabled: false
-        type: git
-        check_installed: test -f ~/.config/direnv/lib/use_dotenvx.sh
-        platforms:
-          only: ["linux"]
-        post_install: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
-        post_update: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
-        opts:
-          destination: ~/.local/bin
+    check_installed: test -f ~/.config/direnv/lib/use_dotenvx.sh
+    type: brew
+    post_install: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
+    post_update: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
+    opts:
+      tap: chenasraf/tap
 
   # ----------------------------------------------------------------------
   # 🛠️ Dev Tools & Utilities
@@ -323,27 +248,7 @@ install:
 
   - name: neovim
     bin_name: nvim
-    type: group
-    steps:
-      - name: neovim
-        bin_name: nvim
-        type: brew
-        platforms:
-          only: ["macos"]
-
-      - name: nvim
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: neovim/neovim
-          strategy: tar
-          download_filename: nvim-linux-{{ .ArchAlias }}.tar.gz
-          extract_to: ~/.local/share/neovim
-          strip_components: 1
-          bin_links:
-            - source: bin/nvim
-              target: ~/.local/bin/nvim
+    type: brew
 
   - name: tree-sitter
     type: github-release
@@ -355,74 +260,22 @@ install:
       download_filename: tree-sitter-{{ .OS }}-{{ if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}.gz
 
   - name: lazygit
-    type: group
-    steps:
-      - name: lazygit
-        type: brew
-      - name: lazygit
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: jesseduffield/lazygit
-          strategy: tar
-          destination: ~/.local/bin
-          # destination: /usr/local/bin
-          download_filename: lazygit_{{ .Version }}_Linux_{{ .ArchAlias }}.tar.gz
+    type: brew
 
   - name: lazydocker
-    type: group
-    steps:
-      - name: lazydocker
-        type: brew
-        opts:
-          tap: jesseduffield/lazydocker
-      - name: lazydocker
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: jesseduffield/lazydocker
-          strategy: tar
-          destination: ~/.local/bin
-          # destination: /usr/local/bin
-          download_filename: lazydocker_{{ .Version }}_Linux_{{ .ArchAlias }}.tar.gz
+    type: brew
+    opts:
+      tap: jesseduffield/lazydocker
 
   - name: lazysql
-    type: group
-    steps:
-      - name: lazysql
-        type: brew
-        opts:
-          tap: jorgerojas26/lazysql
-      - name: lazysql
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: jorgerojas26/lazysql
-          strategy: tar
-          destination: ~/.local/bin
-          # destination: /usr/local/bin
-          download_filename: lazysql_Linux_{{ .ArchAlias }}.tar.gz
+    type: brew
+    opts:
+      tap: jorgerojas26/lazysql
 
   - name: lazyssh
-    type: group
-    steps:
-      - name: lazyssh
-        type: brew
-        opts:
-          tap: Adembc/tap
-      - name: lazyssh
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: Adembc/lazyssh
-          strategy: tar
-          destination: ~/.local/bin
-          # destination: /usr/local/bin
-          download_filename: lazyssh_Linux_{{ .ArchAlias }}.tar.gz
+    type: brew
+    opts:
+      tap: Adembc/tap
 
   - name: devtui
     type: github-release
@@ -436,139 +289,76 @@ install:
 
   - name: atuin
     type: shell
-    check_has_update: '[ "$(cat ~/.cache/sofmani/atuin-version.txt 2>/dev/null)" != "$(curl -fsSL https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name)" ]'
-    post_install: mkdir -p ~/.cache/sofmani && curl -fsSL https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt
-    post_update: mkdir -p ~/.cache/sofmani && curl -fsSL https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt
+    check_has_update: '[ "$(cat ~/.cache/sofmani/atuin-version.txt 2>/dev/null)" != "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name)" ]'
+    post_install: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
+    post_update: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
     opts:
       command: curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
       update_command: atuin-update
 
-  - name: delta
-    type: group
-    steps:
-      - name: git-delta
-        type: brew
-        bin_name: delta
+  - name: git-delta
+    type: brew
+    bin_name: delta
+
+  - name: rsync
+    type: brew
+    platforms:
+      only: ["macos"]
 
   - name: jq
-    type: group
-    steps:
-      - name: jq
-        type: brew
+    type: brew
 
   - name: yq
-    type: group
-    steps:
-      - name: yq
-        type: brew
-      - name: yq
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: mikefarah/yq
-          destination: ~/.local/bin
-          download_filename: yq_linux_{{ .Arch }}
+    type: brew
 
   - name: direnv
-    type: group
-    steps:
-      - name: direnv
-        type: brew
-      - name: direnv
-        type: shell
-        platforms:
-          only: ["linux"]
-        opts:
-          command: export bin_path=/usr/local/bin curl -sfL https://direnv.net/install.sh | bash
+    type: brew
 
   - name: dotenvx
-    type: group
-    steps:
-      - name: dotenvx
-        type: brew
-        opts:
-          tap: dotenvx/brew
-      - name: dotenvx
-        type: shell
-        platforms:
-          only: ["linux"]
-        opts:
-          command: curl -sfS https://dotenvx.sh | sh
+    type: brew
+    opts:
+      tap: dotenvx/brew
 
   - name: ffmpeg
-    type: group
-    steps:
-      - name: ffmpeg
-        type: brew
+    type: brew
 
   - name: fzf
-    type: group
-    steps:
-      - name: fzf
-        type: brew
-      - name: fzf
-        type: github-release
-        platforms:
-          only: ["linux"]
-        opts:
-          repository: junegunn/fzf
-          strategy: tar
-          destination: ~/.local/bin
-          download_filename: fzf-{{ .Version }}-linux_{{ .Arch }}.tar.gz
+    type: brew
 
   - name: fd
-    type: group
-    steps:
-      - name: fd
-        type: brew
-      - name: fd-find
+    type: brew
+
+  - name: superfile
+    type: brew
+    bin_name: spf
+
+  - name: zoxide
+    type: brew
+
+  - name: navi
+    type: brew
+
+  - name: hammerspoon
+    type: brew
+    platforms:
+      only: ["macos"]
+    opts:
+      cask: true
 
   - name: catimg
-    type: group
-    steps:
-      - name: catimg
-        type: brew
+    type: brew
 
   - name: btop
-    type: group
-    steps:
-      - name: btop
-        type: brew
-      - name: btop
-        type: apt
-        platforms:
-          only: ["linux"]
+    type: brew
 
   - name: bat
-    type: group
-    steps:
-      - name: bat
-        type: brew
+    type: brew
+
+  - name: eza
+    type: brew
 
   - name: pandoc
-    type: group
-    steps:
-      - name: pandoc
-        type: brew
-      - name: pandoc
-        # type: github-release
-        # platforms:
-        #   only: ['linux']
-        # opts:
-        #   repository: jgm/pandoc
-        #   destination: ~/.local/bin
-        #   download_filename: pandoc-{{ .Tag }}-linux-{{ .Arch }}
-        type: shell
-        platforms:
-          only: ["linux"]
-        opts:
-          command: |
-            cd $(mktemp -d)
-            VERSION=$(curl -s "https://api.github.com/repos/jgm/pandoc/tags" | jq -r ".[] | select(.name | contains('cli')) | .name" | head -n 1)
-            curl -Lo pandoc.deb "https://github.com/jgm/pandoc/releases/download/$VERSION/pandoc-${VERSION}-1-amd64.deb"
-            dpkg -i pandoc.deb
-            rm -rf pandoc.deb
+    type: brew
 
   - name: nextcloud-talk
     type: brew
@@ -578,7 +368,11 @@ install:
 
   - name: aseprite
     type: group
-    enabled: false
+    platforms:
+      only: ["macos"]
+    machines:
+      only: ["m1"]
+    frequency: 4w
     steps:
       - name: cmake
         type: brew
@@ -586,13 +380,23 @@ install:
         type: brew
       - name: aseprite/aseprite
         type: git
+        check_has_update: '[ "$(git -C ~/.local/build/aseprite rev-parse HEAD 2>/dev/null)" != "$(git ls-remote https://github.com/aseprite/aseprite refs/heads/main | cut -f1)" ]'
+        pre_update: |
+          cd ~/.local/build/aseprite
+          git fetch --depth=1 origin main
+          git reset --hard FETCH_HEAD
+          git submodule update --init --recursive --depth=1 -f
         post_install: |
           cd ~/.local/build/aseprite
+          git submodule update --init --recursive --depth=1
           rm -f build/CMakeCache.txt
           ./build.sh --auto --norun
-          cp bin/aseprite /Applications/Aseprite.app/Contents/MacOS/aseprite
+          chmod +x build/bin/aseprite
+          cp -f build/bin/aseprite /Applications/Aseprite.app/Contents/MacOS/aseprite
+          rsync -a --delete build/bin/data/ /Applications/Aseprite.app/Contents/Resources/data/
+          xattr -rd com.apple.quarantine /Applications/Aseprite.app
 
-          RAW_TAG=$(git describe --tags --abbrev=0)
+          RAW_TAG=$(gh api repos/aseprite/aseprite/releases/latest --jq .tag_name)
           VERSION=${RAW_TAG#v}
           PLIST="/Applications/Aseprite.app/Contents/Info.plist"
           plutil -convert xml1 "$PLIST"
@@ -602,9 +406,12 @@ install:
           cd ~/.local/build/aseprite
           rm -f build/CMakeCache.txt
           ./build.sh --auto --norun
-          cp bin/aseprite /Applications/Aseprite.app/Contents/MacOS/aseprite
+          chmod +x build/bin/aseprite
+          cp -f build/bin/aseprite /Applications/Aseprite.app/Contents/MacOS/aseprite
+          rsync -a --delete build/bin/data/ /Applications/Aseprite.app/Contents/Resources/data/
+          xattr -rd com.apple.quarantine /Applications/Aseprite.app
 
-          RAW_TAG=$(git describe --tags --abbrev=0)
+          RAW_TAG=$(gh api repos/aseprite/aseprite/releases/latest --jq .tag_name)
           VERSION=${RAW_TAG#v}
           PLIST="/Applications/Aseprite.app/Contents/Info.plist"
           plutil -convert xml1 "$PLIST"
@@ -612,7 +419,7 @@ install:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST"
         opts:
           destination: ~/.local/build
-          flags: --depth=1
+          install_flags: --depth=1 --recurse-submodules --shallow-submodules
 
   - name: regex-tui
     type: github-release
@@ -633,10 +440,53 @@ install:
       only: ["m1"]
 
   - name: lefthook
-    type: group
-    steps:
-      - name: lefthook
-        type: brew
+    type: brew
+
+  - name: lintree
+    type: github-release
+    opts:
+      repository: PatchMon/lintree
+      destination: ~/.local/bin
+      strategy: tar
+      archive_bin_name:
+        macos: lintree-darwin-{{ .ArchAlias }}
+        linux: lintree-linux-{{ .Arch }}
+      download_filename:
+        macos: lintree-darwin-{{ .ArchAlias }}.tar.gz
+        linux: lintree-linux-{{ .Arch }}.tar.gz
+
+  - name: tmux
+    type: brew
+
+  - name: jless
+    type: brew
+
+  - name: dysk
+    type: brew
+
+  - name: lynis
+    type: shell
+    tags: security
+    machines:
+      only: ["spider"]
+    platforms:
+      only: ["linux"]
+    # lynis runs as root, so it must live system-wide and be root-owned (it
+    # refuses to execute user-owned files as root). Clone into /usr/local/share
+    # and drop a wrapper on root's PATH — lynis resolves its include/ dir
+    # relative to $0, so the wrapper cd's into the checkout rather than symlink.
+    check_installed: command -v lynis > /dev/null 2>&1
+    check_has_update: '[ "$(sudo git -C /usr/local/share/lynis rev-parse HEAD 2>/dev/null)" != "$(git ls-remote https://github.com/CISOfy/lynis refs/heads/master | cut -f1)" ]'
+    opts:
+      command: |
+        sudo git clone --depth=1 https://github.com/CISOfy/lynis /usr/local/share/lynis
+        sudo chown -R 0:0 /usr/local/share/lynis
+        printf '#!/bin/sh\ncd /usr/local/share/lynis && exec ./lynis "$@"\n' | sudo tee /usr/local/bin/lynis > /dev/null
+        sudo chmod +x /usr/local/bin/lynis
+      update_command: |
+        sudo git -C /usr/local/share/lynis fetch --depth=1 origin master
+        sudo git -C /usr/local/share/lynis reset --hard FETCH_HEAD
+        sudo chown -R 0:0 /usr/local/share/lynis
 
   # ----------------------------------------------------------------------
   # 💻 Language Runtimes & Package Managers
@@ -647,30 +497,13 @@ install:
   #   desc: Installers for language version managers like pyenv, fnm, etc.
 
   - name: fnm
-    type: shell
-    enabled: false
-    post_install: |
-      FNM_PATH="/root/.local/share/fnm"
-      if [ -d "$FNM_PATH" ]; then
-        export PATH="$FNM_PATH:$PATH"
-        eval "`fnm env`"
-      fi
-      fnm install --lts
-      fnm use lts-latest
-    opts:
-      command: curl -fsSL https://fnm.vercel.app/install | bash
+    type: brew
 
   - name: pyenv
-    type: group
-    steps:
-      - name: pyenv
-        type: brew
-      - name: pyenv
-        type: shell
-        platforms:
-          only: ["linux"]
-        opts:
-          command: "curl https://pyenv.run | bash"
+    type: brew
+
+  - name: uv
+    type: brew
 
   # ----------------------------------------------------------------------
   # 📦 PNPM Ecosystem
@@ -717,20 +550,11 @@ install:
 
   - name: claude-code
     bin_name: claude
-    type: group
-    steps:
-      - name: claude-code
-        bin_name: claude
-        type: brew
-        post_install: xattr -rd com.apple.quarantine $(which claude)
-        post_update: xattr -rd com.apple.quarantine $(which claude)
-        opts:
-          cask: true
-      # - name: "@anthropic-ai/claude-code"
-      #   bin_name: claude
-      #   type: npm
-      #   platforms:
-      #     only: ["linux"]
+    type: brew
+    post_install: "[[ $(uname -s) != 'Darwin' ]] || xattr -rd com.apple.quarantine $(which claude)"
+    post_update: "[[ $(uname -s) != 'Darwin' ]] || xattr -rd com.apple.quarantine $(which claude)"
+    opts:
+      cask: true
 
   - name: opencode
     type: brew
@@ -786,17 +610,14 @@ install:
   #   desc: Python tools and utilities installed via pipx.
 
   - name: pipx
-    type: group
+    type: brew
     post_install: sudo pipx ensurepath --global
-    steps:
-      - name: pipx
-        type: brew
 
-      - name: jedi-language-server
-        type: pipx
+  - name: jedi-language-server
+    type: pipx
 
-      - name: black
-        type: pipx
+  - name: black
+    type: pipx
 
   # ----------------------------------------------------------------------
   # 🔌 Zsh & Tmux Plugins
@@ -807,12 +628,6 @@ install:
   #   desc: Git-based plugins and themes for Zsh shell and Tmux.
 
   # local-plugins: no longer needed — tracked in-place by bare repo at ~/.local/share/zsh/plugins/local/
-
-  - name: mfaerevaag/wd
-    type: git
-    tags: plugin zsh
-    opts:
-      destination: ~/.local/share/zsh/plugins
 
   - name: romkatv/powerlevel10k
     type: git
@@ -827,32 +642,13 @@ install:
     opts:
       destination: ~/.local/share/zsh/plugins
 
-  - name: tmux-plugins/tpm
+  - name: Aloxaf/fzf-tab
     type: git
-    tags: plugin tmux
+    tags: plugin zsh
     opts:
-      destination: ~/.tmux/plugins
+      destination: ~/.local/share/zsh/plugins
 
-  - name: catppuccin/tmux
-    type: git
-    tags: plugin tmux
+  - name: tpack
+    type: brew
     opts:
-      destination: ~/.tmux/plugins/catppuccin
-
-  - name: tmux-plugins/tmux-online-status
-    type: git
-    tags: plugin tmux
-    opts:
-      destination: ~/.tmux/plugins
-
-  - name: tmux-plugins/tmux-battery
-    type: git
-    tags: plugin tmux
-    opts:
-      destination: ~/.tmux/plugins
-
-  - name: tmux-plugins/tmux-cpu
-    type: git
-    tags: plugin tmux
-    opts:
-      destination: ~/.tmux/plugins
+      tap: tmuxpack/tpack

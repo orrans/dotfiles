@@ -52,7 +52,7 @@ prjd() {
   if [[ -z "$sub" ]]; then
     read sub
   fi
-  dv="$(wd path dv)/$sub"
+  dv="$(print -r -- ~dv)/$sub"
   pushd "$dv"
 }
 
@@ -63,7 +63,7 @@ prj() {
     echo "Open project directory in nvim"
     return 0
   fi
-  pushd "$(wd path dv)/$@"
+  pushd "$(print -r -- ~dv)/$@"
   nvim .
   popd
 }
@@ -124,3 +124,13 @@ largest-dirs() {
 }
 # alias for largest-dirs
 alias largest-folders='largest-dirs'
+
+pbfile() {
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: pbfile <file>"
+    echo "Copy file contents to clipboard"
+    return 0
+  fi
+
+  cat "$1" | pbcopy
+}

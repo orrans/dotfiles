@@ -24,6 +24,9 @@ if is_wsl 2>/dev/null; then
   alias pbpaste="powershell.exe -command 'Get-Clipboard' | tr -d '\r'"
 fi
 
+# expand aliases after sudo (trailing space makes zsh alias-expand the next word)
+alias sudo='sudo '
+
 # navigation
 alias ".."="cd .."
 alias "..."="cd ../.."
@@ -32,16 +35,23 @@ alias pushd="pushd -q"
 alias popd="popd -q"
 
 # file listing
-alias ls="ls -h --color=auto"
-alias ll="ls -l"
-alias la="ls -la"
-alias l="ls -A"
+alias ls="eza -h --color=auto --icons always"
+alias ll="eza -lh --icons always"
+alias la="eza -lAh --icons always"
+alias l="eza -A --icons always"
+alias tree="eza -h --color=auto --icons always --tree"
 
 # editor
 alias v="nvim ."
 alias vi="nvim"
 alias vim="nvim"
 alias lvim="nvim -c':e#<1'"
+
+# file management
+alias cp="cp -iv"
+alias rm="rm -iv"
+alias mv="mv -iv"
+alias mkdir="mkdir -pv"
 
 # output pipes
 if is_wsl 2>/dev/null; then
@@ -95,7 +105,7 @@ alias hi="source \$DOTFILES/install.zsh"
 alias hli="hl && hi"
 alias hiv="hi; vim ."
 alias hihv="hi && hv"
-alias hv="pushd \$(wd path df); vi .; popd"
+alias hv="pushd \$(print -r -- ~df); vi .; popd"
 alias rh="rhome"
 alias hst="home status"
 alias hlg="lg -p \$HOME/.dotfiles"
@@ -109,18 +119,18 @@ hp() {
   fi
   home push
 }
-alias hl="home pull && stow -R -d \$DOTFILES -t ~ ."
+alias hl="home pull && stow --no-folding -R -d \$DOTFILES -t ~ ."
 
 # stow
-alias stow-deploy="stow -v -R -d \$DOTFILES -t ~ ."
-alias stow-adopt="stow -v --adopt -d \$DOTFILES -t ~ ."
+alias stow-deploy="stow --no-folding -v -R -d \$DOTFILES -t ~ ."
+alias stow-adopt="stow --no-folding -v --adopt -d \$DOTFILES -t ~ ."
 alias stow-clean="stow -v -D -d \$DOTFILES -t ~ ."
 alias swd="stow-deploy"
 alias swa="stow-adopt"
 alias swc="stow-clean"
 alias hlog="home log"
 alias motd="run-parts \$DOTFILES/_plugins/motd"
-alias spider="ssh root@spider.casraf.dev"
+alias spider="ssh spider"
 
 # docker
 alias dex="docker-exec"
@@ -135,12 +145,11 @@ alias dvp="docker-volume-path"
 alias ldc="lazydocker"
 
 # tmux
-alias tmux="tmux -f \$CFG/tmux/conf.tmux"
 alias tn="tmux new"
 alias tns="tmux new -s"
 alias tas="tmux attach -t"
 alias tlw="tmux list-windows"
-alias trl="tmux source-file \$CFG/tmux/conf.tmux"
+alias trl="tmux source-file \$CFG/tmux/tmux.conf"
 alias trn="tmux rename-session -t"
 alias tks="tmux kill-server"
 alias tk="tx kill"
@@ -192,6 +201,7 @@ else
   alias emulator="\$HOME/Library/Android/sdk/emulator/emulator"
 fi
 alias pixel9="emulator -avd Pixel_9_API_35"
+alias pixeltab10="emulator -avd Tablet_10_API_36"
 alias pixelwatch="emulator -avd Wear_OS_Small_Round_API_34"
 
 # 1password
@@ -208,6 +218,21 @@ alias atu="atuin"
 
 # database
 alias lsq="lazysql"
+
+# file suffixes
+alias -s md=bat
+alias -s json=jless
+alias -s yaml="bat -l yaml"
+alias -s yml="bat -l yaml"
+for ext in {txt,conf,ini,log}; do
+  alias -s $ext=less
+done
+for ext in {go,py,rb,dart,js,ts,tsx,jsx}; do
+  alias -s $ext="\$EDITOR"
+done
+for ext in {jpg,jpeg,png,gif,webp,mp4,avi,mov}; do
+  alias -s $ext="open"
+done
 
 # general
 alias serve="open http://localhost:\${PORT:-3001} & http-server -p \${PORT:-3001}"
@@ -254,3 +279,12 @@ alias mdf="prettier --config \$HOME/.prettierrc --ignore-path \$HOME/.prettierig
 alias wands="alias G 'wand --wand-file' G -v wands"
 alias cc="claude"
 alias bex="bundle exec"
+alias resetdns="sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder"
+alias get-gh-gitea-token="op item get github --fields 'Gitea Access Token' --reveal"
+alias get-gitea-token="op item get gitea --fields 'Personal Access Token' --reveal"
+alias expand="print -r --"
+# alias z="zoxide"
+alias ccr="cc --resume"
+alias ccc="cc --continue"
+alias ccw="cc --worktree"
+alias tmpv="vi \$(mktemp)"

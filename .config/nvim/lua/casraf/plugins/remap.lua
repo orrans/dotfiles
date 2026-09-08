@@ -90,10 +90,10 @@ end, { desc = "Reload buffer from disk", silent = true })
 -- NOTE find and replace
 --
 -- search and replace current word
-vim.keymap.set("n", "<leader>r", [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]],
+vim.keymap.set("n", "<leader>R", [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]],
   { desc = "Search and replace current word" })
 -- search and replace current selection
-vim.keymap.set("v", "<leader>r", [["hy:%s/<C-r>h/<C-r>h/gI<Left><Left><Left>]],
+vim.keymap.set("v", "<leader>R", [["hy:%s/<C-r>h/<C-r>h/gI<Left><Left><Left>]],
   { desc = "Search and replace current selection" })
 
 ---
@@ -258,7 +258,6 @@ local function nope()
   vim.g.mapleader = " "
   -- vim.keymap.set("n", "<leader>pv", vim.cmd.Ex, { desc = "File explorer" })
   vim.keymap.set("n", "<leader>pv", require("oil").open, { desc = "File explorer" })
-  vim.keymap.set("n", "-", require("oil").open, { desc = "File explorer" })
 
   -- vim.keymap.set({"v", "n"}, "<C-.>", "<C-o>", { desc = "Go to previous cursor location" })
   -- vim.keymap.set({"v", "n"}, "<C-,>", "<C-i>", { desc = "Go to next cursor location" })
