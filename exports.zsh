@@ -71,7 +71,9 @@ export YAMLLINT_CONFIG_FILE="$CFG/.yamllint.yml"
 
 # Atuin
 export PATH="$HOME/.atuin/bin:$PATH"
-eval "$(atuin init zsh)"
+if command -v atuin >/dev/null 2>&1; then
+  eval "$(atuin init zsh)"
+fi
 # atuin() {
 #   unset -f atuin
 #   eval "$(command atuin init zsh)"
