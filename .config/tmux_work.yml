@@ -1,0 +1,5 @@
+work:
+  root: ~/project
+  windows:
+    - .
+    - test-automation
