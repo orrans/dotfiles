@@ -66,7 +66,3 @@ source "$DOTFILES/terminal.zsh"
 source "$DOTFILES/tmux.zsh"
 
 [[ ! -f "$CFG/.p10k.zsh" ]] || source "$CFG/.p10k.zsh"
-
-. "$HOME/.atuin/bin/env"
-
-eval "$(atuin init zsh)"
