@@ -1,165 +1,169 @@
-# macOS entry point: Alacritty reads ~/.config/alacritty/alacritty.toml.
-# Shared settings live in shared.toml; this file adds the macOS window options
-# and the Cmd/Opt key bindings. Windows uses windows.toml instead.
+# Windows key bindings. Alacritty reads %APPDATA%\alacritty\alacritty.toml; on
+# Windows install.sh writes that as a small entry file which imports this one and
+# sets the shell (WSL). Shared settings live in shared.toml.
+#
+# The macOS modifiers map as follows:
+#   Cmd        -> Ctrl
+#   Cmd+Shift  -> Ctrl+Shift
+#   Opt        -> Ctrl+Alt
+#   Cmd+Opt+S  -> Ctrl+Alt+Q
+# Ctrl carries the Cmd bindings because the Windows key is captured by the OS and
+# Alt+Shift switches the input language when more than one keyboard language is
+# installed. As a result Ctrl+A/D/G/P/S/T/W/Z never reach the shell or nvim.
 
 [general]
 import = ["shared.toml"]
 
-[window]
-decorations = "Transparent"
-# Lets the Opt bindings below reach the terminal instead of typing symbols
-option_as_alt = "Both"
-
 # Mouse bindings
 [[mouse.bindings]]
 mouse = "Left"
-mods = "Command"
+mods = "Control"
 action = "None"
 
 # ==============================================================================
 # Font size
 # ==============================================================================
 
-# Increase font size: Cmd+Shift+=
+# Increase font size: Ctrl+Shift+=
 [[keyboard.bindings]]
 key = "Plus"
-mods = "Command|Shift"
+mods = "Control|Shift"
 action = "IncreaseFontSize"
 
-# Reset font size: Cmd+Shift+0
+# Reset font size: Ctrl+Shift+0
 [[keyboard.bindings]]
 key = "Key0"
-mods = "Command|Shift"
+mods = "Control|Shift"
 action = "ResetFontSize"
 
 # ==============================================================================
 # tmux bindings
 # ==============================================================================
 
-# Previous tmux window: Cmd+Shift+[  (which is Cmd+{)
+# Previous tmux window: Ctrl+Shift+[  (which is Ctrl+{)
 [[keyboard.bindings]]
 key = "{"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u0002p"
 
-# Next tmux window: Cmd+Shift+]  (which is Cmd+})
+# Next tmux window: Ctrl+Shift+]  (which is Ctrl+})
 [[keyboard.bindings]]
 key = "}"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u0002n"
 
-# Zoom tmux pane: Cmd+Z
+# Zoom tmux pane: Ctrl+Z
 [[keyboard.bindings]]
 key = "Z"
-mods = "Command"
+mods = "Control"
 chars = "\u0002z"
 
-# Kill tmux pane: Cmd+W
+# Kill tmux pane: Ctrl+W
 [[keyboard.bindings]]
 key = "W"
-mods = "Command"
+mods = "Control"
 chars = "\u0002x"
 
-# Detach tmux: Cmd+Shift+W
+# Detach tmux: Ctrl+Shift+W
 [[keyboard.bindings]]
 key = "W"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u0002d"
 
-# Split tmux pane horizontally: Cmd+D
+# Split tmux pane horizontally: Ctrl+D
 [[keyboard.bindings]]
 key = "D"
-mods = "Command"
+mods = "Control"
 chars = "\u0002|"
 
-# Split tmux pane vertically: Cmd+Shift+D
+# Split tmux pane vertically: Ctrl+Shift+D
 [[keyboard.bindings]]
 key = "D"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u0002_"
 
-# Create new tmux window: Cmd+T
+# Create new tmux window: Ctrl+T
 [[keyboard.bindings]]
 key = "T"
-mods = "Command"
+mods = "Control"
 chars = "\u0002c"
 
-# Set tmux split equal: Cmd+=
+# Set tmux split equal: Ctrl+=
 [[keyboard.bindings]]
 key = "Equals"
-mods = "Command"
+mods = "Control"
 chars = "\u0002E"
 
-# Select tmux session: Cmd+Shift+P
+# Select tmux session: Ctrl+Shift+P
 [[keyboard.bindings]]
 key = "P"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u0002s"
 
 # ==============================================================================
 # vim bindings
 # ==============================================================================
 
-# Split vim pane horizontally: Opt+S
+# Split vim pane horizontally: Ctrl+Alt+S
 [[keyboard.bindings]]
 key = "S"
-mods = "Alt"
+mods = "Control|Alt"
 chars = "\u0017s"
 
-# Split vim pane vertically: Opt+V
+# Split vim pane vertically: Ctrl+Alt+V
 [[keyboard.bindings]]
 key = "V"
-mods = "Alt"
+mods = "Control|Alt"
 chars = "\u0017v"
 
-# Select all in nvim: Cmd+A
+# Select all in nvim: Ctrl+A
 [[keyboard.bindings]]
 key = "A"
-mods = "Command"
+mods = "Control"
 chars = "\u001bggVG"
 
-# Save in nvim: Cmd+S
+# Save in nvim: Ctrl+S
 [[keyboard.bindings]]
 key = "S"
-mods = "Command"
+mods = "Control"
 chars = "\u001b\u001b w"
 
-# Save all in nvim: Cmd+Shift+S
+# Save all in nvim: Ctrl+Shift+S
 [[keyboard.bindings]]
 key = "S"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u001b\u001b W"
 
-# Save and close pane in nvim: Cmd+Opt+S
+# Save and close pane in nvim: Ctrl+Alt+Q
 [[keyboard.bindings]]
-key = "S"
-mods = "Command|Alt"
+key = "Q"
+mods = "Control|Alt"
 chars = "\u001b\u001bZZ"
 
-# Open file text search in neovim: Cmd+Shift+F
+# Open file text search in neovim: Ctrl+Shift+F
 [[keyboard.bindings]]
 key = "F"
-mods = "Command|Shift"
+mods = "Control|Shift"
 chars = "\u001b\u001b fg\n"
 
-# Open file picker in neovim: Cmd+P
+# Open file picker in neovim: Ctrl+P
 [[keyboard.bindings]]
 key = "P"
-mods = "Command"
+mods = "Control"
 chars = "\u001b\u001b ff\n"
 
-# Open lazygit in neovim: Cmd+G
+# Open lazygit in neovim: Ctrl+G
 [[keyboard.bindings]]
 key = "G"
-mods = "Command"
+mods = "Control"
 chars = "\u001b\u001b gs\n"
 
 # ==============================================================================
 # Terminal bindings
 # ==============================================================================
 
-# Delete entire row: Cmd+Backspace
+# Delete entire row: Ctrl+Backspace
 [[keyboard.bindings]]
 key = "Back"
-mods = "Command"
+mods = "Control"
 chars = "\u0015"

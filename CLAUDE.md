@@ -47,6 +47,12 @@ whether it should be symlinked (add nothing) or sourced (add a regex to `.stow-l
   (not tpm) — see the `run 'tpack init'` line at the bottom of `tmux.conf`. Catppuccin theme
   variables (e.g. `#{@thm_sky}`, `#{@thm_teal}`, `#{@thm_surface_0}`) come from the catppuccin/tmux
   plugin and are the right way to reference colors — don't hard-code hex.
+- **Alacritty** — `.config/alacritty/shared.toml` holds fonts, colors and platform-neutral
+  bindings; `alacritty.toml` is the macOS entry (Cmd/Opt bindings) and `windows.toml` the Windows
+  binding set (Cmd→Ctrl, Cmd+Shift→Ctrl+Shift, Opt→Ctrl+Alt). Both import `shared.toml`. On Windows
+  `install.sh` writes `%APPDATA%\alacritty\alacritty.toml` as an entry file that imports
+  `windows.toml` from the WSL dotfiles — never edit that generated file. TOML `chars` values use
+  `\uXXXX` escapes; the Write/Edit tools decode those into raw bytes, so write them via a script.
 - **Neovim** — entry at `.config/nvim/init.lua`, all user config under `.config/nvim/lua/casraf/`,
   plugins under `.config/nvim/lua/casraf/plugins/` (lazy.nvim). The README has a per-plugin map;
   consult it before adding new plugin files.
