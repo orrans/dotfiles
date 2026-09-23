@@ -30,6 +30,77 @@
       nc_aio() { sudo docker exec --user www-data nextcloud-aio-nextcloud "$@"; }
       nc_aio_tty() { sudo docker exec --user www-data -it nextcloud-aio-nextcloud "$@"; }
 
+    # Helpers for db-backup, pulled in with `eval "$NC_DB_LIB"`. These reach the
+    # AIO instance over ssh rather than through nc_target: the dumps live on a
+    # drive attached to this machine, so the command only makes sense from here.
+    NC_DB_LIB: |
+      NC_SSH="${NXC_NC_SSH:-spider}"
+      NC_DB_CONTAINER=nextcloud-aio-database
+      NC_APP_CONTAINER=nextcloud-aio-nextcloud
+      NC_REDIS_CONTAINER=nextcloud-aio-redis
+      NC_DB_KEEP="${NXC_DB_KEEP:-5}"
+      # Dumps sit beside the rsync'd data, not inside it: `nxc backup` runs with
+      # --delete --delete-excluded over $DRIVE/Nextcloud and would take them along.
+      NC_DB_DIR="${NXC_DB_DIR:-/Volumes/2T SSD/Nextcloud-db}"
+
+      # psql and pg_dump read their credentials from the database container's own
+      # environment. The remote shell keeps $POSTGRES_* inside single quotes, so
+      # the password is expanded in the container and never reaches a command line
+      # on this machine or on the server.
+      nc_pg() { ssh -n "$NC_SSH" "sudo docker exec $NC_DB_CONTAINER sh -c 'set -o pipefail; $1'"; }
+      nc_pg_stdin() { ssh "$NC_SSH" "sudo docker exec -i $NC_DB_CONTAINER sh -c 'set -o pipefail; $1'"; }
+      nc_occ() { ssh -n "$NC_SSH" "sudo docker exec --user www-data $NC_APP_CONTAINER php occ $*"; }
+
+      NC_PG_DUMP='PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges | gzip -c'
+      NC_PG_LOAD='PGPASSWORD="$POSTGRES_PASSWORD" exec psql -v ON_ERROR_STOP=1 -q -o /dev/null --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+      NC_PG_KICK='PGPASSWORD="$POSTGRES_PASSWORD" exec psql -q -o /dev/null -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()"'
+
+      nc_db_dir() {
+        _parent="${NC_DB_DIR%/*}"
+        if [ ! -d "$_parent" ]; then
+          echo "Mount the 2T SSD first! ($_parent not found)" >&2
+          return 1
+        fi
+        mkdir -p "$NC_DB_DIR"
+      }
+
+      # pg_dump writes this line once it has walked every table, so it separates a
+      # finished dump from one whose connection dropped partway — the latter still
+      # decompresses cleanly and would otherwise pass for a good backup.
+      nc_db_complete() {
+        gzip -dc "$1" 2>/dev/null | tail -n 20 | grep -q 'PostgreSQL database dump complete'
+      }
+
+      # Compression happens in the container, so only the compressed stream crosses
+      # the network. The dump lands under .partial until it is verified, keeping a
+      # half-written file out of the way of nc_db_latest.
+      nc_db_dump_to() {
+        _dest="$1"
+        if ! nc_pg "$NC_PG_DUMP" > "$_dest.partial"; then
+          rm -f "$_dest.partial"
+          echo "pg_dump failed" >&2
+          return 1
+        fi
+        if ! nc_db_complete "$_dest.partial"; then
+          rm -f "$_dest.partial"
+          echo "Dump is truncated; not keeping it." >&2
+          return 1
+        fi
+        mv "$_dest.partial" "$_dest"
+      }
+
+      nc_db_ls() { find "$NC_DB_DIR" -maxdepth 1 -type f -name "$1*.sql.gz" 2>/dev/null | sort; }
+      nc_db_latest() { nc_db_ls nextcloud-db- | tail -n 1; }
+
+      nc_db_prune() {
+        _keep=$NC_DB_KEEP
+        _drop=$(( $(nc_db_ls "$1" | grep -c .) - _keep ))
+        [ "$_drop" -le 0 ] && return 0
+        nc_db_ls "$1" | head -n "$_drop" | while IFS= read -r _old; do
+          rm -f "$_old" && echo "Pruned $(basename "$_old")"
+        done
+      }
+
 use:
   description: Set the Nextcloud dev version
   cmd: |
@@ -144,19 +215,88 @@ debug:
     nc_exec_tty php occ config:system:set debug --type bool --value "$1"
 
 upgrade:
-  description: Upgrade Nextcloud AIO
+  description: Upgrade Nextcloud — AIO runs the updater, dev pulls git + images
   flags:
     beta:
       type: bool
-      description: Upgrade via beta channel
+      description: Upgrade via beta channel (AIO only)
   cmd: |
     eval "$NC_LIB"
+    nc_target
+
+    if [ "$NC_AIO" = 1 ]; then
+      if [ "$WAND_FLAG_BETA" = "true" ]; then
+        nc_aio_tty php occ config:system:set updater.release.channel --value=beta
+        nc_aio_tty php updater/updater.phar --no-interaction
+        nc_aio_tty php occ config:system:set updater.release.channel --value=stable
+      else
+        nc_aio_tty php updater/updater.phar --no-interaction
+      fi
+      exit 0
+    fi
+
     if [ "$WAND_FLAG_BETA" = "true" ]; then
-      nc_aio_tty php occ config:system:set updater.release.channel --value=beta
-      nc_aio_tty php updater/updater.phar --no-interaction
-      nc_aio_tty php occ config:system:set updater.release.channel --value=stable
+      echo "--beta only applies to AIO; the dev instance tracks git branches." >&2
+      exit 1
+    fi
+
+    REPO="${NXC_DEV_REPO:-$HOME/Dev/nextcloud-docker-dev}"
+    if [ ! -d "$REPO/.git" ]; then
+      echo "No dev checkout at $REPO (set NXC_DEV_REPO to override)." >&2
+      exit 1
+    fi
+    cd "$REPO" || exit 1
+
+    # .env owns the checkout locations and writes them with $HOME unexpanded,
+    # so put them through the shell the way docker compose interpolates them.
+    env_path() {
+      _v="$(sed -n "s/^$1=//p" "$REPO/.env" 2>/dev/null | tail -n1)"
+      [ -z "$_v" ] && return 1
+      eval "printf '%s' \"$_v\""
+    }
+
+    if [ "$NC_VERSION" = "nextcloud" ]; then
+      SERVER="$(env_path REPO_PATH_SERVER)" || SERVER="$REPO/workspace/server"
     else
-      nc_aio_tty php updater/updater.phar --no-interaction
+      STABLE_ROOT="$(env_path STABLE_ROOT_PATH)" || STABLE_ROOT="$REPO/workspace"
+      SERVER="$STABLE_ROOT/$NC_VERSION"
+    fi
+
+    # .env and docker-compose.override.yml are gitignored, so they ride through
+    # untouched. --autostash covers the tracked files Nextcloud rewrites in place
+    # (.htaccess gains its ErrorDocument block at install time); a re-apply that
+    # conflicts aborts the pull and leaves the stash for you to recover.
+    pull() {
+      echo "==> Updating $1"
+      git -C "$1" pull --ff-only --autostash
+    }
+
+    pull "$REPO" || exit 1
+
+    if [ -d "$SERVER/.git" ]; then
+      pull "$SERVER" || exit 1
+      git -C "$SERVER" submodule update --init --recursive || exit 1
+    else
+      echo "No git checkout at $SERVER; skipping server update." >&2
+    fi
+
+    echo "==> Pulling images"
+    docker compose pull --include-deps proxy "$NC_VERSION" || exit 1
+
+    echo "==> Recreating containers"
+    docker compose up -d proxy "$NC_VERSION" || exit 1
+
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      docker exec --user www-data "$NC_CONTAINER" php occ status >/dev/null 2>&1 && break
+      sleep 2
+    done
+
+    echo "==> Running occ upgrade"
+    docker exec --user www-data "$NC_CONTAINER" php occ upgrade
+    RC=$?
+    # 3 means the code was already current, which is a no-op rather than a failure.
+    if [ "$RC" -ne 0 ] && [ "$RC" -ne 3 ]; then
+      exit "$RC"
     fi
 
 force-appupdate:
@@ -255,6 +395,429 @@ backup:
       spider:/mnt/ncdata/ \
       "$DRIVE/Nextcloud/"
     find "$DRIVE/Nextcloud" -type f -name '._*' -exec rm -f -- {} +
+
+db-backup:
+  description: Dump the AIO database to the external drive
+  confirm: This will dump the Nextcloud database from spider to the 2T SSD. Continue?
+  cmd: |
+    eval "$NC_DB_LIB"
+
+    # An unknown subcommand falls through to the parent as a positional argument,
+    # so a mistyped `restore` would silently take a backup instead.
+    if [ "$#" -gt 0 ]; then
+      echo "Usage: nxc db-backup                  # dump the database to the 2T SSD" >&2
+      echo "       nxc db-backup restore [dump]   # load a dump back into the database" >&2
+      exit 1
+    fi
+
+    nc_db_dir || exit 1
+    OUT="$NC_DB_DIR/nextcloud-db-$(date +%Y%m%d-%H%M%S).sql.gz"
+
+    echo "==> Dumping $NC_SSH:$NC_DB_CONTAINER"
+    nc_db_dump_to "$OUT" || exit 1
+    echo "Wrote $OUT ($(du -h "$OUT" | cut -f1 | tr -d ' '))"
+
+    nc_db_prune nextcloud-db-
+
+  children:
+    restore:
+      description: Load a dump from the external drive back into the AIO database
+      confirm: This will REPLACE the live Nextcloud database on spider. Continue?
+      cmd: |
+        eval "$NC_DB_LIB"
+        nc_db_dir || exit 1
+
+        SRC="$1"
+        if [ -z "$SRC" ]; then
+          SRC="$(nc_db_latest)"
+          if [ -z "$SRC" ]; then
+            echo "No dumps in $NC_DB_DIR — run 'nxc db-backup' first." >&2
+            exit 1
+          fi
+        fi
+        if [ ! -f "$SRC" ]; then
+          echo "No such dump: $SRC" >&2
+          exit 1
+        fi
+
+        echo "==> Checking $(basename "$SRC")"
+        gzip -t "$SRC" || { echo "$SRC is corrupt." >&2; exit 1; }
+        nc_db_complete "$SRC" || { echo "$SRC is truncated." >&2; exit 1; }
+
+        nc_occ maintenance:mode --on || exit 1
+
+        SAFETY="$NC_DB_DIR/pre-restore-$(date +%Y%m%d-%H%M%S).sql.gz"
+        echo "==> Saving the current database as $(basename "$SAFETY")"
+        if ! nc_db_dump_to "$SAFETY"; then
+          echo "No rollback copy, so nothing was replaced." >&2
+          nc_occ maintenance:mode --off
+          exit 1
+        fi
+        nc_db_prune pre-restore-
+
+        # Open connections would block the schema drop, and pg_stat_activity is
+        # read after the dump above so this cannot cut that connection short.
+        nc_pg "$NC_PG_KICK" || exit 1
+
+        # The schema reset travels in the same transaction as the dump, so a load
+        # that fails anywhere leaves the existing database exactly as it was.
+        echo "==> Loading $(basename "$SRC")"
+        if ! { printf 'SET client_min_messages = warning;\nDROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public;\n'
+               gzip -dc "$SRC"; } | nc_pg_stdin "$NC_PG_LOAD"; then
+          echo >&2
+          echo "Restore failed. The database is unchanged and Nextcloud stays in" >&2
+          echo "maintenance mode; take it out with: nxc occ maintenance:mode --off" >&2
+          exit 1
+        fi
+
+        # Redis caches rows and file locks from the database that was just replaced.
+        echo "==> Flushing the Redis cache"
+        ssh -n "$NC_SSH" "sudo docker exec $NC_REDIS_CONTAINER sh -c 'redis-cli -a \"\$REDIS_HOST_PASSWORD\" --no-auth-warning FLUSHALL'" \
+          || echo "Warning: could not flush Redis." >&2
+
+        nc_occ maintenance:mode --off
+        echo "Restored $SRC"
+        echo "Rollback copy: $SAFETY"
+
+upload:
+  description: Upload a file or folder to Nextcloud over WebDAV
+  aliases: [up]
+  flags:
+    force:
+      alias: f
+      type: bool
+      description: Re-upload files even when the remote size already matches
+  cmd: |
+    if [ "$#" -eq 0 ]; then
+      echo "Usage: nxc upload [--force] <source>... [target]" >&2
+      echo >&2
+      echo "  nxc upload ./notes.md              -> /notes.md" >&2
+      echo "  nxc upload ./notes.md Docs/        -> /Docs/notes.md" >&2
+      echo "  nxc upload ./notes.md Docs/new.md  -> /Docs/new.md" >&2
+      echo "  nxc upload ./photos Albums/        -> /Albums/photos/..." >&2
+      echo "  nxc upload ./photos Albums/2024    -> /Albums/2024/..." >&2
+      echo "  nxc upload a.md b.md Docs/         -> /Docs/a.md, /Docs/b.md" >&2
+      echo "  nxc upload ./photos/* Albums/2024  -> /Albums/2024/<each entry>" >&2
+      echo >&2
+      echo "With two or more sources the last argument is the target folder, and each" >&2
+      echo "source keeps its own name inside it." >&2
+      echo "Files whose remote copy is the same size are skipped (--force overrides)." >&2
+      echo "Files above NXC_CHUNK_MB (default 32) MiB go up in chunks, and an" >&2
+      echo "interrupted run continues from the last chunk the server kept." >&2
+      exit 1
+    fi
+
+    # cp-style split: with two or more arguments the last one is the target and
+    # everything before it is a source. Rotating through "$@" keeps the sources in
+    # order without arrays.
+    DEST=""
+    if [ "$#" -ge 2 ]; then
+      _argc=$#
+      _argi=1
+      while [ "$_argi" -le "$_argc" ]; do
+        _arg="$1"
+        shift
+        if [ "$_argi" -eq "$_argc" ]; then
+          DEST="$_arg"
+        else
+          set -- "$@" "$_arg"
+        fi
+        _argi=$((_argi + 1))
+      done
+    fi
+
+    # Single-quote the whole pattern, then break out of the quotes around each glob
+    # metacharacter, so the eval below expands the pattern and nothing else in it —
+    # a name holding $(...), a quote or a space survives intact.
+    glob_quote() {
+      printf '%s' "$1" | sed "s/'/'\\\\''/g; s/[]*?[]/'&'/g; s/^/'/; s/\$/'/"
+    }
+
+    # A pattern arrives unexpanded when it was quoted, or when the calling shell
+    # leaves a non-matching glob alone; expanding it here makes both spellings
+    # behave alike. zsh needs the eval — it does not glob an unquoted "$var".
+    # A pattern matching nothing stays literal, so the existence check below names
+    # the pattern the caller typed.
+    _argc=$#
+    _argi=0
+    while [ "$_argi" -lt "$_argc" ]; do
+      _arg="$1"
+      shift
+      _argi=$((_argi + 1))
+      if [ -e "$_arg" ] || [ -L "$_arg" ]; then
+        set -- "$@" "$_arg"
+        continue
+      fi
+      case "$_arg" in
+        *[]*?[]*)
+          _before=$#
+          eval "set -- \"\$@\" $(glob_quote "$_arg")" 2>/dev/null
+          if [ "$#" -eq "$_before" ]; then
+            set -- "$@" "$_arg"
+          fi
+          ;;
+        *) set -- "$@" "$_arg" ;;
+      esac
+    done
+
+    for SRC in "$@"; do
+      if [ ! -e "$SRC" ] && [ ! -L "$SRC" ]; then
+        echo "No such file or directory: $SRC" >&2
+        exit 1
+      fi
+    done
+
+    DAV_HOST="${NXC_DAV_HOST:-${NEXTCLOUD_HOST:-}}"
+    DAV_USER="${NXC_DAV_USER:-${NEXTCLOUD_USERNAME:-}}"
+    DAV_PASS="${NXC_DAV_PASS:-${NEXTCLOUD_PASSWORD:-}}"
+    if [ -z "$DAV_HOST" ] || [ -z "$DAV_USER" ] || [ -z "$DAV_PASS" ]; then
+      echo "Missing credentials: set NEXTCLOUD_HOST, NEXTCLOUD_USERNAME and NEXTCLOUD_PASSWORD" >&2
+      echo "(or NXC_DAV_HOST / NXC_DAV_USER / NXC_DAV_PASS to target another instance)." >&2
+      exit 1
+    fi
+    DAV_ROOT="${DAV_HOST%/}/remote.php/dav/files/${DAV_USER}"
+
+    # Percent-encode each path segment; jq handles UTF-8, the separators go back in after.
+    urlenc() { printf '%s' "$1" | jq -sRr @uri | sed 's|%2F|/|g'; }
+    # --globoff: curl globs both the URL and the -T argument, so a "[...]" in a file
+    # name would otherwise be read as a range.
+    dav() { curl -sS --globoff -u "$DAV_USER:$DAV_PASS" "$@"; }
+
+    # curl draws the transfer bar on stderr, so it coexists with the captured status
+    # code on stdout. Off when stderr is not a terminal, to keep logs clean.
+    PROGRESS="-s"
+    [ -t 2 ] && PROGRESS="--progress-bar"
+    dav_put() { curl -S $PROGRESS --globoff -u "$DAV_USER:$DAV_PASS" "$@"; }
+
+    # MKCOL creates a single collection, so walk the path; 405 means it is already there.
+    mkcol_p() {
+      _rest="$1"
+      _acc=""
+      while [ -n "$_rest" ]; do
+        _seg="${_rest%%/*}"
+        case "$_rest" in
+          */*) _rest="${_rest#*/}" ;;
+          *) _rest="" ;;
+        esac
+        [ -z "$_seg" ] && continue
+        _acc="${_acc:+$_acc/}$_seg"
+        _code=$(dav -o /dev/null -w '%{http_code}' -X MKCOL "$DAV_ROOT/$(urlenc "$_acc")") \
+          || { echo "MKCOL $_acc failed (curl exit $?)" >&2; return 1; }
+        case "$_code" in
+          201|405) ;;
+          *) echo "MKCOL $_acc failed (HTTP $_code)" >&2; return 1 ;;
+        esac
+      done
+    }
+
+    fsize() { stat -f %z "$1" 2>/dev/null || stat -c %s "$1" 2>/dev/null; }
+    fmtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+    hash_id() {
+      if command -v md5sum >/dev/null 2>&1; then
+        printf '%s' "$1" | md5sum | cut -d' ' -f1
+      elif command -v md5 >/dev/null 2>&1; then
+        printf '%s' "$1" | md5 -q
+      else
+        printf '%s' "$1" | cksum | tr -d ' '
+      fi
+    }
+
+    # Size of the remote file, empty when it is absent. Size is the whole comparison:
+    # the server exposes no checksum, and mtime only matches for files this command
+    # itself uploaded (it sends X-OC-Mtime).
+    remote_size() {
+      _head=$(curl -sS -I --globoff -u "$DAV_USER:$DAV_PASS" \
+        -w 'nxc_code:%{http_code}\n' "$DAV_ROOT/$(urlenc "$1")" 2>/dev/null) || return 0
+      case "$(printf '%s\n' "$_head" | sed -n 's|^nxc_code:||p')" in
+        200|204) ;;
+        *) return 0 ;;
+      esac
+      printf '%s\n' "$_head" | tr -d '\r' \
+        | sed -n 's|^[Cc]ontent-[Ll]ength: *\([0-9][0-9]*\).*|\1|p' | tail -n1
+    }
+
+    # "<chunk name> <size>" per line for the chunks an upload session already holds.
+    # tr splits the XML one tag per line so the prefixes (d:, D:, none) all parse the same.
+    list_chunks() {
+      dav -X PROPFIND -H 'Depth: 1' -H 'Content-Type: application/xml' \
+        --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getcontentlength/></d:prop></d:propfind>' \
+        "$1" 2>/dev/null \
+        | tr '<' '\n' \
+        | awk '
+            /^[A-Za-z0-9]*:?href>/ {
+              sub(/^[^>]*>/, ""); n = split($0, p, "/"); name = p[n]; next
+            }
+            /^[A-Za-z0-9]*:?getcontentlength>/ {
+              sub(/^[^>]*>/, ""); if (name ~ /^[0-9]+$/) print name, $0
+            }
+          '
+    }
+
+    put_simple() {
+      _code=$(dav_put -o /dev/null -w '%{http_code}' -H "X-OC-Mtime: $3" \
+        -T "$1" "$DAV_ROOT/$(urlenc "$2")") \
+        || { echo "PUT $2 failed (curl exit $?)" >&2; return 1; }
+      case "$_code" in
+        201|204) ;;
+        *) echo "PUT $2 failed (HTTP $_code)" >&2; return 1 ;;
+      esac
+    }
+
+    # Chunked upload: chunks land in a per-file session folder and the closing MOVE
+    # assembles them, so chunks a previous run finished survive an interruption.
+    # Names are zero-padded because the server assembles them in name order.
+    put_chunked() {
+      _src="$1"; _rem="$2"; _fsize="$3"; _mtime="$4"
+      _count=$(( (_fsize + CHUNK_SIZE - 1) / CHUNK_SIZE ))
+      _sess="${DAV_HOST%/}/remote.php/dav/uploads/${DAV_USER}/nxc-$(hash_id "$_rem|$_fsize|$_mtime")"
+      _dest="$DAV_ROOT/$(urlenc "$_rem")"
+
+      _code=$(dav -o /dev/null -w '%{http_code}' -X MKCOL -H "Destination: $_dest" "$_sess") \
+        || { echo "MKCOL upload session for $_rem failed (curl exit $?)" >&2; return 1; }
+      case "$_code" in
+        201|405) ;;
+        *) echo "MKCOL upload session for $_rem failed (HTTP $_code)" >&2; return 1 ;;
+      esac
+
+      _have=$(list_chunks "$_sess")
+      _i=0
+      while [ "$_i" -lt "$_count" ]; do
+        _n=$((_i + 1))
+        _name=$(printf '%016d' "$_n")
+        _want=$((_fsize - _i * CHUNK_SIZE))
+        [ "$_want" -gt "$CHUNK_SIZE" ] && _want=$CHUNK_SIZE
+        if [ "$(printf '%s\n' "$_have" | awk -v n="$_name" '$1 == n { print $2 }')" = "$_want" ]; then
+          printf '  chunk %s/%s (present)\n' "$_n" "$_count"
+          _i=$_n
+          continue
+        fi
+        dd if="$_src" of="$CHUNK_TMP" bs=1048576 skip=$((_i * CHUNK_MB)) count="$CHUNK_MB" 2>/dev/null \
+          || { echo "Reading chunk $_n of $_src failed" >&2; return 1; }
+        printf '  chunk %s/%s\n' "$_n" "$_count"
+        _code=$(dav_put -o /dev/null -w '%{http_code}' -T "$CHUNK_TMP" "$_sess/$_name") \
+          || { echo "PUT chunk $_n of $_rem failed (curl exit $?)" >&2; return 1; }
+        case "$_code" in
+          201|204) ;;
+          *) echo "PUT chunk $_n of $_rem failed (HTTP $_code)" >&2; return 1 ;;
+        esac
+        _i=$_n
+      done
+
+      _code=$(dav -o /dev/null -w '%{http_code}' -X MOVE -H "Destination: $_dest" \
+        -H "OC-Total-Length: $_fsize" -H "X-OC-Mtime: $_mtime" "$_sess/.file") \
+        || { echo "MOVE $_rem failed (curl exit $?)" >&2; return 1; }
+      case "$_code" in
+        201|204) ;;
+        *) echo "MOVE $_rem failed (HTTP $_code)" >&2; return 1 ;;
+      esac
+    }
+
+    # $3 labels the line printed above the transfer bar.
+    put() {
+      _lsize=$(fsize "$1")
+      _lmtime=$(fmtime "$1")
+      if [ -z "$_lsize" ]; then
+        echo "Could not stat $1" >&2
+        return 1
+      fi
+      if [ "$WAND_FLAG_FORCE" != "true" ] && [ "$(remote_size "$2")" = "$_lsize" ]; then
+        printf '%s %s (skipped)\n' "${3:- }" "$2"
+        SKIPPED=$((SKIPPED + 1))
+        return 0
+      fi
+      printf '%s %s\n' "${3:- }" "$2"
+      if [ "$_lsize" -gt "$CHUNK_SIZE" ]; then
+        put_chunked "$1" "$2" "$_lsize" "$_lmtime" || return 1
+      else
+        put_simple "$1" "$2" "$_lmtime" || return 1
+      fi
+      UPLOADED=$((UPLOADED + 1))
+    }
+
+    # Send one source to its resolved remote path. The locals carry an _up_ prefix
+    # because the put_* helpers share this shell and reuse the shorter names.
+    upload_one() {
+      _up_base="$1"; _up_remote="$2"
+
+      if [ -f "$_up_base" ]; then
+        case "$_up_remote" in
+          */*) mkcol_p "${_up_remote%/*}" || return 1 ;;
+        esac
+        echo "$_up_base -> /$_up_remote"
+        put "$_up_base" "$_up_remote" || return 1
+        return 0
+      fi
+
+      if [ ! -d "$_up_base" ]; then
+        echo "Not a regular file or directory: $_up_base" >&2
+        return 1
+      fi
+
+      _up_was_up=$UPLOADED
+      _up_was_skip=$SKIPPED
+      echo "$_up_base/ -> /$_up_remote/"
+      mkcol_p "$_up_remote" || return 1
+      # The strip patterns quote "$_up_base" so a "[...]" in the path stays literal
+      # instead of being read as a character class.
+      find "$_up_base" -mindepth 1 -type d -print > "$TMP"
+      while IFS= read -r d; do
+        mkcol_p "$_up_remote/${d#"$_up_base"/}" || return 1
+      done < "$TMP"
+      find "$_up_base" -type f ! -name '.DS_Store' ! -name '._*' -print > "$TMP"
+      _up_total="$(wc -l < "$TMP" | tr -d ' ')"
+      _up_n=0
+      while IFS= read -r f; do
+        _up_n=$((_up_n + 1))
+        put "$f" "$_up_remote/${f#"$_up_base"/}" "[$_up_n/$_up_total]" || return 1
+      done < "$TMP"
+      printf '%s uploaded, %s skipped -> /%s/\n' \
+        "$((UPLOADED - _up_was_up))" "$((SKIPPED - _up_was_skip))" "$_up_remote"
+    }
+
+    CHUNK_MB="${NXC_CHUNK_MB:-32}"
+    CHUNK_SIZE=$((CHUNK_MB * 1048576))
+    UPLOADED=0
+    SKIPPED=0
+    TMP="$(mktemp)"
+    CHUNK_TMP="$(mktemp)"
+    # A signal handler that only cleans up leaves the shell running the next file, so
+    # these exit as well — Ctrl-C has to stop the whole transfer, not just one curl.
+    cleanup() { rm -f "$CHUNK_TMP" "$TMP"; }
+    trap 'cleanup' EXIT
+    trap 'cleanup; exit 130' INT
+    trap 'cleanup; exit 143' TERM
+
+    MULTI=0
+    [ "$#" -gt 1 ] && MULTI=1
+    DEST="${DEST#/}"
+
+    for SRC in "$@"; do
+      if [ -d "$SRC" ]; then
+        BASE="$(cd "$SRC" && pwd)"
+      else
+        BASE="$SRC"
+      fi
+      NAME="$(basename "$BASE")"
+
+      # A trailing slash on the target means "into this folder", anything else names
+      # the uploaded file/folder itself. Several sources can only go into a folder,
+      # so there the target is one whether or not it ends in a slash.
+      if [ "$MULTI" = 1 ]; then
+        REMOTE="${DEST%/}"
+        REMOTE="${REMOTE:+$REMOTE/}$NAME"
+      else
+        case "$DEST" in
+          ""|*/) REMOTE="${DEST}${NAME}" ;;
+          *) REMOTE="$DEST" ;;
+        esac
+      fi
+
+      upload_one "$BASE" "$REMOTE" || exit 1
+    done
+
+    if [ "$MULTI" = 1 ]; then
+      printf '%s uploaded, %s skipped in total\n' "$UPLOADED" "$SKIPPED"
+    fi
 
 install-app:
   description: Download and install a Nextcloud app from GitHub releases
@@ -358,3 +921,49 @@ unlock-files:
   description: Clear dangling file locks
   cmd: |
     sudo docker exec nextcloud-aio-redis sh -c 'redis-cli -a "$REDIS_HOST_PASSWORD" --scan --pattern "*lockfiles*" | xargs redis-cli -a "$REDIS_HOST_PASSWORD" del'
+
+aio-login:
+  description: Print a pre-authenticated URL for the AIO interface
+  aliases: [aio]
+  flags:
+    remote:
+      alias: r
+      type: bool
+      description: Read the token over SSH instead of from the local Docker daemon
+  env:
+    NC_AIO_MASTER: nextcloud-aio-mastercontainer
+    NC_AIO_CONFIG: /mnt/docker-aio-config/data/configuration.json
+    NC_AIO_SSH: spider
+  cmd: |
+    # AIO blocks the password login on :8080 for as long as Nextcloud is running and
+    # expects the token handoff from Nextcloud's admin settings instead. That handoff
+    # comes from the bundled nextcloud-aio app, which Nextcloud disables on a major
+    # upgrade whenever the app's declared max-version lags behind the server. The
+    # mastercontainer's own token still opens a session, so read it straight from there.
+    if [ "$WAND_FLAG_REMOTE" = "true" ]; then
+      CFG="$(ssh "$NC_AIO_SSH" "sudo docker exec $NC_AIO_MASTER cat $NC_AIO_CONFIG")"
+    else
+      CFG="$(sudo docker exec "$NC_AIO_MASTER" cat "$NC_AIO_CONFIG")"
+    fi
+    if [ -z "$CFG" ]; then
+      echo "Could not read $NC_AIO_CONFIG from $NC_AIO_MASTER." >&2
+      echo "Running this off the server? Add --remote to go via ssh $NC_AIO_SSH." >&2
+      exit 1
+    fi
+
+    TOKEN="$(printf '%s' "$CFG" | jq -r '.AIO_TOKEN // empty')"
+    HOSTPORT="$(printf '%s' "$CFG" | jq -r '.AIO_URL // empty')"
+    if [ -z "$TOKEN" ] || [ -z "$HOSTPORT" ]; then
+      echo "AIO_TOKEN or AIO_URL missing from $NC_AIO_CONFIG" >&2
+      exit 1
+    fi
+    # AIO stores AIO_URL bare (host:port), and the interface is TLS-only.
+    case "$HOSTPORT" in
+      http://*|https://*) URL="$HOSTPORT" ;;
+      *) URL="https://$HOSTPORT" ;;
+    esac
+
+    echo "$URL/api/auth/getlogin?token=$TOKEN"
+    echo
+    echo "Grants full AIO admin access - treat it like a password." >&2
+    echo "The certificate is self-signed, so the browser warning is expected." >&2

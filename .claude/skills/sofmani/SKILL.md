@@ -7,293 +7,170 @@ description: Add, edit, or manage sofmani installer entries in sofmani.yml. This
 
 Work with [sofmani](https://github.com/chenasraf/sofmani) (Software Manifest) — a declarative provisioning tool that automates software installations via YAML config. The config file lives at `~/.dotfiles/.config/sofmani.yml`.
 
-## Quick Reference
+## Reference material
 
-### CLI Flags
+`references/` holds sofmani's own documentation, copied verbatim from the repository. It is the
+authority on every field, installer type, and option — consult it rather than working from memory,
+since the tool gains options regularly.
 
-| Flag | Purpose |
+| File | Answers |
 |------|---------|
-| `-u` / `-U` | Enable/disable update checking |
-| `-d` / `-D` | Enable/disable debug mode |
-| `-s` / `-S` | Enable/disable summary |
-| `-f <filter>` | Filter installers (see below) |
-| `-m` | Show machine ID |
+| `references/installer-configuration.md` | Installer fields, every `type`, their `opts`, template variables, version pinning, categories |
+| `references/configuration-reference.md` | Top-level config: `debug`, `check_updates`, `repo_update`, `defaults`, `machine_aliases` |
+| `references/command-line-interface.md` | CLI flags and filter syntax |
+| `references/sofmani.schema.json` | Exact field names and value types, as JSON Schema |
 
-Filter syntax: `-f <name>`, `-f tag:<tag>`, `-f type:<type>`. Negate with `!`: `-f "!tag:system"`.
+`references/SOURCE.txt` records which sofmani version the copies came from. Refresh them with
+`scripts/sync-docs.sh` — it copies from the local checkout when there is one (picking up
+unreleased work), and downloads from GitHub otherwise. Run it when a documented option doesn't
+behave as described, or after shipping a sofmani change.
 
-### Template Variables
+## Everyday usage
 
-Available in shell commands and `opts` string fields:
+Run with `sofmani`; the config is found automatically. Useful while iterating:
 
-| Variable | Value |
-|----------|-------|
-| `{{ .Arch }}` | CPU architecture |
-| `{{ .ArchAlias }}` | Architecture alias (e.g. `amd64`) |
-| `{{ .OS }}` | Operating system |
-| `{{ .DeviceID }}` | Machine unique ID |
-| `{{ .DeviceIDAlias }}` | Friendly machine name from `machine_aliases` |
-| `{{ .Tag }}` | Release tag (github-release only) |
-| `{{ .Version }}` | Version without `v` prefix (github-release only) |
+```bash
+sofmani -f neovim          # run a single installer by name
+sofmani -f tag:config      # run everything carrying a tag
+sofmani -f "!tag:system"   # everything except a tag
+sofmani -u                 # check for updates too
+sofmani -d                 # debug output
+sofmani -m                 # print this machine's ID
+```
 
-Environment variables `$DEVICE_ID` and `$DEVICE_ID_ALIAS` are also injected into shell commands.
+## Entry shapes used in this config
 
-## Installer Entry Reference
+These are the patterns this manifest is built from — brew carries most of it, with
+`github-release` or `shell` covering what Homebrew can't. For any field or option not shown here,
+read `references/installer-configuration.md`.
 
-Every entry in the `install` array supports these fields:
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `name` | string (required) | Step identifier |
-| `type` | string (required) | Installer type |
-| `tags` | string | Space-separated tags for filtering |
-| `bin_name` | string | Binary name if different from `name` |
-| `enabled` | bool/string | Conditional execution (string = shell command) |
-| `platforms` | object | `only` / `except` arrays: `macos`, `linux`, `windows` |
-| `machines` | object | `only` / `except` arrays of machine alias names |
-| `check_installed` | string | Shell command to verify installation |
-| `check_has_update` | string | Shell command to check for updates |
-| `pre_install` | string | Shell hook before install |
-| `post_install` | string | Shell hook after install |
-| `pre_update` | string | Shell hook before update |
-| `post_update` | string | Shell hook after update |
-| `skip_summary` | bool/object | Exclude from summary (`true`, or `{ install: true, update: true }`) |
-| `env_shell` | object | Platform-specific shell override (e.g. `{ linux: /bin/bash }`) |
-| `opts` | object | Type-specific options (see below) |
-
-## Installer Types
-
-### brew
-
-Homebrew package. The project defaults restrict brew to macOS only — no need to add `platforms` for brew entries.
+### Single package
 
 ```yaml
 - name: ripgrep
   type: brew
 ```
 
-With tap:
+`bin_name` when the binary is named differently, `opts.tap` for a custom tap:
 
 ```yaml
-- name: sofmani
+- name: neovim
+  bin_name: nvim
+  type: brew
+
+- name: lazyssh
   type: brew
   opts:
-    tap: chenasraf/tap
+    tap: Adembc/tap
 ```
 
-opts: `tap`, `cask` (bool).
+### Platform restrictions
 
-### group
-
-Sequence multiple steps. The primary pattern for cross-platform installs: brew on macOS + github-release or apt on Linux.
+`apt`, `apk`, `pacman` and `yay` run on Linux and nowhere else; sofmani enforces that itself and
+ignores any `platforms` written on such a step, so don't write one (use `enabled` to turn one off).
+Brew has no such restriction (Homebrew runs on Linux too), so scope it explicitly where it matters,
+usually on the group:
 
 ```yaml
-- name: lazygit
+- name: macos-wm
   type: group
+  platforms: { only: ["macos"] }
   steps:
-    - name: lazygit
+    - name: borders
       type: brew
-    - name: lazygit
-      type: github-release
-      platforms:
-        only: ['linux']
       opts:
-        repository: jesseduffield/lazygit
-        strategy: tar
-        destination: ~/.local/bin
-        download_filename: lazygit_{{ .Version }}_Linux_{{ .ArchAlias }}.tar.gz
+        tap: FelixKratz/formulae
+    - name: aerospace
+      type: brew
+      post_update: aerospace reload-config
 ```
 
-### shell
+### Binary from a GitHub release
 
-Execute arbitrary shell commands. The most flexible type.
-
-```yaml
-- name: git-config
-  type: shell
-  check_installed: git config --global user.name > /dev/null 2>&1
-  opts:
-    command: |
-      git config --global user.name "Name"
-      git config --global user.email "email@example.com"
-    update_command: <same or different command for updates>
-```
-
-opts: `command` (required), `update_command`.
-
-### git
-
-Clone a git repository.
+The fallback when Homebrew has no formula. `download_filename` takes a per-platform map and
+template variables:
 
 ```yaml
-- name: my-plugin
-  type: git
-  opts:
-    repository: https://github.com/user/repo.git
-    destination: ~/.local/share/plugins/repo
-    ref: main
-```
-
-opts: `repository` (required), `destination` (required), `ref`.
-
-GitHub shorthand: `repository: user/repo` expands to `https://github.com/user/repo.git`.
-
-### github-release
-
-Download a binary from GitHub releases.
-
-```yaml
-- name: tool
+- name: devtui
   type: github-release
   opts:
-    repository: user/tool
+    repository: skatkov/devtui
+    strategy: tar
     destination: ~/.local/bin
-    strategy: tar          # or: binary, zip
-    download_filename: tool_{{ .Version }}_Linux_{{ .ArchAlias }}.tar.gz
+    download_filename:
+      macos: devtui_Darwin_{{ .ArchAlias }}.tar.gz
+      linux: devtui_Linux_{{ .ArchAlias }}.tar.gz
 ```
 
-opts: `repository` (required), `destination` (required), `strategy` (`tar`/`binary`/`zip`), `download_filename` (supports template vars including `{{ .Version }}`, `{{ .Tag }}`, `{{ .Arch }}`, `{{ .ArchAlias }}`).
+### Group with a shell fallback
 
-### manifest
-
-Load an external sofmani config file (local or from a git repo).
+Brew where it exists, an install script everywhere else:
 
 ```yaml
-- name: lazygit
-  type: manifest
-  opts:
-    source: git@github.com/chenasraf/sofmani.git
-    path: docs/recipes/lazygit.yml
-```
-
-opts: `source`, `path`.
-
-### apt
-
-Debian/Ubuntu package manager.
-
-```yaml
-- name: stow
-  type: apt
-  platforms:
-    only: ['linux']
-```
-
-### npm / pnpm / yarn
-
-Node.js package managers. Install global packages.
-
-```yaml
-- name: typescript
-  type: pnpm
-  opts:
-    global: true
-```
-
-### pipx
-
-Python tool installer.
-
-```yaml
-- name: black
-  type: pipx
-```
-
-### cargo
-
-Rust package installer.
-
-```yaml
-- name: ripgrep
-  type: cargo
-```
-
-### rsync
-
-File synchronization.
-
-```yaml
-- name: sync-config
-  type: rsync
-  opts:
-    source: ./config/
-    destination: ~/.config/app/
-```
-
-### docker
-
-Pull and optionally run containers.
-
-```yaml
-- name: my-service
-  type: docker
-  opts:
-    image: nginx:latest
-```
-
-## Common Patterns
-
-### Cross-platform group (brew + github-release)
-
-The standard pattern for CLI tools. Brew handles macOS, github-release handles Linux:
-
-```yaml
-- name: tool-name
+- name: ollama
   type: group
   steps:
-    - name: tool-name
+    - name: ollama
       type: brew
-    - name: tool-name
-      type: github-release
-      platforms:
-        only: ['linux']
+      post_install: brew services start ollama
+      post_update: brew services restart ollama
+    - name: ollama
+      type: shell
+      check_installed: ollama --version
+      check_has_update: true
       opts:
-        repository: owner/tool-name
-        destination: ~/.local/bin
-        strategy: tar
-        download_filename: tool-name-linux-{{ .Arch }}.tar.gz
-```
-
-### Cross-platform group (brew + apt)
-
-For packages available in both package managers:
-
-```yaml
-- name: stow
-  type: group
-  steps:
-    - name: stow
-      type: brew
-    - name: stow
-      type: apt
-      platforms:
-        only: ['linux']
+        command: curl -fsSL https://ollama.com/install.sh | sh
+        update_command: curl -fsSL https://ollama.com/install.sh | sh
 ```
 
 ### Config installer with idempotency
 
-Use `check_installed` and `check_has_update` for shell installers that manage config:
+Shell installers that manage config need `check_installed` and `check_has_update`, or they run
+every time. `$DOTFILES` is available, and `{{ .DeviceIDAlias }}` picks the per-machine file:
 
 ```yaml
-- name: tmux-config
+- name: tx-config
   type: shell
   tags: config tmux
-  enabled: test -f "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml"
-  check_installed: test -f ~/.config/tmux_local.yml
-  check_has_update: '! diff -q "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml" ~/.config/tmux_local.yml > /dev/null 2>&1'
+  enabled: test -f "$DOTFILES/.config/tmux_{{ .DeviceIDAlias }}.yml"
+  check_installed: test -e ~/.config/tmux_local.yml && [ "$(readlink "$DOTFILES/.config/tmux_local.yml")" = "tmux_{{ .DeviceIDAlias }}.yml" ]
+  check_has_update: '[ "$(readlink "$DOTFILES/.config/tmux_local.yml" 2>/dev/null)" != "tmux_{{ .DeviceIDAlias }}.yml" ]'
   opts:
-    command: cp "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml" ~/.config/tmux_local.yml
-    update_command: cp "$HOME/.config/tmux_{{ .DeviceIDAlias }}.yml" ~/.config/tmux_local.yml
+    command: ln -sfn "tmux_{{ .DeviceIDAlias }}.yml" "$DOTFILES/.config/tmux_local.yml" && stow -R -d "$DOTFILES" -t ~ .
+    update_command: ln -sfn "tmux_{{ .DeviceIDAlias }}.yml" "$DOTFILES/.config/tmux_local.yml" && stow -R -d "$DOTFILES" -t ~ .
 ```
 
 ### Machine-specific installer
 
-Restrict to specific machines using aliases defined in `machine_aliases`:
+Restricted with aliases from the top-level `machine_aliases` (get an ID with `sofmani -m`):
 
 ```yaml
 - name: glab
   type: brew
   machines:
-    only: ['planck']
+    only: ["planck"]
+```
+
+### Pinned to a version
+
+`opts.version` holds a package at an exact version instead of following the newest release. The
+syntax differs per type — see Version Pinning in `references/installer-configuration.md`:
+
+```yaml
+- name: prettier
+  type: pnpm
+  opts:
+    version: 3.3.3
+```
+
+### Allowed to fail
+
+A failing installer stops the run. Steps that may legitimately fail can carry on instead:
+
+```yaml
+- name: some-flaky-tool
+  type: brew
+  allow_failure: true
 ```
 
 ## Working with the Config File
@@ -303,4 +180,4 @@ Restrict to specific machines using aliases defined in `machine_aliases`:
 - New entries should be placed in the appropriate category section (marked by comment headers).
 - Follow the existing indentation and style conventions in the file.
 - When adding a new tool, check if a similar entry already exists that can be extended.
-- For detailed installer type documentation, see `references/installer-types.md`.
+- Verify a new entry by running it alone: `sofmani -f <name>`.

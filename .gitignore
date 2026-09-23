@@ -17,9 +17,6 @@ var/log/sofmani
 /.config/direnv/lib
 /.local/share/*
 /.config/tmux/plugins
-/Library/Application Support/superfile
-!/Library/Application Support/superfile/hotkeys.toml
-!/Library/Application Support/superfile/config.toml
 .claude/settings.local.json
 .claude/settings.json
 Library/pnpm

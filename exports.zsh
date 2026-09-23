@@ -16,7 +16,7 @@ export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/local/sbin:$PATH"
 
 # local plugins
 export PLUGINS_DIR="$HOME/.local/share/zsh/plugins"
-export TMUX_PLUGINS_DIR="$HOME/.tmux/plugins"
+export TMUX_PLUGINS_DIR="$HOME/.config/tmux/plugins"
 
 # Lazygit
 if [[ -d "$CFG/lazygit" ]]; then
@@ -139,17 +139,16 @@ if [[ -d "$HOME/Library/pnpm" ]]; then
 else
   export PNPM_HOME="$HOME/.local/share/pnpm"
 fi
-case ":$PATH:" in
-  *":$PNPM_HOME/bin:"*) ;;
-  *) export PATH="$PNPM_HOME/bin:$PATH" ;;
-esac
+# The pnpm launcher itself sits in $PNPM_HOME, while the packages it installs land in
+# $PNPM_HOME/bin. $PNPM_HOME also still holds shims from pnpm's previous layout, so bin
+# has to be searched first or a stale shim shadows the version pnpm just installed.
+# Drop both before re-adding: a guard that only skips when already present would keep
+# whatever order an inherited PATH arrived in, and `exec zsh` inherits PATH.
+path=("${(@)path:#$PNPM_HOME}")
+path=("${(@)path:#$PNPM_HOME/bin}")
+path=("$PNPM_HOME/bin" "$PNPM_HOME" $path)
+export PATH
 # pnpm end
-
-if [[ -f $(which pnpm) ]]; then
-  export PATH="$PNPM_HOME:$PATH"
-  export PATH="$HOME/Library/pnpm:$PATH"
-  # export PATH=$(pnpm bin --global):$PATH
-fi
 
 # Yarn
 # if [[ -f $(which yarn) ]]; then
