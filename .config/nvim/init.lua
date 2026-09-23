@@ -8,9 +8,10 @@ vim.g.maplocalleader = ' '
 -- (tree-sitter CLI for nvim-treesitter, etc.)
 do
   local extra = { vim.fn.expand('~/.local/bin'), '/opt/homebrew/bin', '/usr/local/bin' }
+  local sep = package.config:sub(1, 1) == '\\' and ';' or ':'
   for _, dir in ipairs(extra) do
     if vim.fn.isdirectory(dir) == 1 and not vim.env.PATH:find(dir, 1, true) then
-      vim.env.PATH = dir .. ':' .. vim.env.PATH
+      vim.env.PATH = dir .. sep .. vim.env.PATH
     end
   end
 end

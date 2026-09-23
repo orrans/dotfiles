@@ -41,9 +41,17 @@ is_wsl() {
   return $?
 }
 
+# check if running on native Windows (Git Bash / MSYS2)
+is_windows() {
+  case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
 # runs all scripts in directory $1 in order
-# same as run-parts from debian, but for osx
-if is_mac; then
+# same as run-parts from debian, for systems without it (macOS, Git Bash)
+if ! command -v run-parts >/dev/null 2>&1; then
   run-parts() {
     verbose=0
     if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then

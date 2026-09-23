@@ -11,7 +11,7 @@ defaults:
       verbose: true
 
 machine_aliases:
-  m1: 5fa2a8e8193868df
+  work: b0a592956c48b3b9
   spider: d0de2a71060c023e
   planck: 0f5d6c09c377537f
 
@@ -111,6 +111,8 @@ install:
   - name: git-gpg
     type: shell
     tags: git
+    platforms:
+      except: ["windows"]
     check_installed: 'gpg --list-keys | grep -q "$GITHUB_GPG_KEY_ID"'
     opts:
       command: curl https://github.com/web-flow.gpg | gpg --import
@@ -139,6 +141,8 @@ install:
   - name: git-config
     type: shell
     tags: git
+    platforms:
+      except: ["windows"]
     check_installed: (git config --global user.name && git config --global user.email && git config --global user.signingkey) > /dev/null 2>&1
     opts:
       command: |
@@ -233,8 +237,8 @@ install:
   - name: direnv-dotenvx
     check_installed: test -f ~/.config/direnv/lib/use_dotenvx.sh
     type: brew
-    post_install: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
-    post_update: test -f  ~/.config/direnv/lib/use_dotenvx.sh || ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh
+    post_install: test -f ~/.config/direnv/lib/use_dotenvx.sh || { mkdir -p ~/.config/direnv/lib && ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh; }
+    post_update: test -f ~/.config/direnv/lib/use_dotenvx.sh || { mkdir -p ~/.config/direnv/lib && ln -s $(brew --prefix)/opt/direnv-dotenvx/libexec/use_dotenvx.sh ~/.config/direnv/lib/use_dotenvx.sh; }
     opts:
       tap: chenasraf/tap
 
@@ -279,6 +283,8 @@ install:
 
   - name: devtui
     type: github-release
+    platforms:
+      except: ["windows"] # no Windows release asset
     opts:
       repository: skatkov/devtui
       strategy: tar
@@ -289,11 +295,13 @@ install:
 
   - name: atuin
     type: shell
+    platforms:
+      except: ["windows"] # install.sh installs the Windows build
     check_has_update: '[ "$(cat ~/.cache/sofmani/atuin-version.txt 2>/dev/null)" != "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name)" ]'
     post_install: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
     post_update: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
     opts:
-      command: curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
+      command: curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive
       update_command: atuin-update
 
   - name: git-delta
@@ -364,6 +372,7 @@ install:
     type: brew
     platforms:
       only: ["macos"]
+    enabled: test "$(uname -s)" = Darwin # defaults.type.brew.platforms overrides per-installer platforms
     check_installed: test -d "/Applications/Nextcloud Talk.app"
 
   - name: aseprite
@@ -551,10 +560,16 @@ install:
   - name: claude-code
     bin_name: claude
     type: brew
+    enabled: test "$(uname -s)" = Darwin # defaults.type.brew.platforms overrides per-installer platforms
     post_install: "[[ $(uname -s) != 'Darwin' ]] || xattr -rd com.apple.quarantine $(which claude)"
     post_update: "[[ $(uname -s) != 'Darwin' ]] || xattr -rd com.apple.quarantine $(which claude)"
     opts:
       cask: true
+  # - name: "@anthropic-ai/claude-code"
+  #   bin_name: claude
+  #   type: npm
+  #   platforms:
+  #     only: ["linux"]
 
   - name: opencode
     type: brew
@@ -611,7 +626,9 @@ install:
 
   - name: pipx
     type: brew
-    post_install: sudo pipx ensurepath --global
+    platforms:
+      except: ["windows"] # pipx comes from brew
+    post_install: sudo "$(command -v pipx)" ensurepath --global # root PATH lacks brew
 
   - name: jedi-language-server
     type: pipx

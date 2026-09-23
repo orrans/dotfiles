@@ -87,6 +87,19 @@ git clone git@github.com:chenasraf/dotfiles.git --depth 1 ~/.dotfiles
 
 The script handles everything: installs Homebrew, zsh, stow, and sofmani; symlinks configs; and runs sofmani to set up all tools. It works on macOS, Linux, and WSL, and is safe to run multiple times.
 
+Pass `--yes` to skip the prompts.
+
+#### Windows
+
+Run the same script from **Git Bash** (Git for Windows). It installs zsh and tmux into the
+Git for Windows tree (needs one UAC prompt), CLI tools via winget, the FiraCode Nerd Font,
+writes `%APPDATA%\alacritty\alacritty.toml` (an entry file that imports the repo's
+`.config/alacritty/windows.toml`), and sets `XDG_CONFIG_HOME` so Neovim/lazygit read
+`~/.config`. If a WSL distro exists it is set up too (sudo user, copy of the repo in
+`~/.dotfiles`, same installer inside); Alacritty then defaults to it and imports its config
+from the dotfiles inside WSL.
+Override with `WSL_DISTRO=Ubuntu WSL_USER=me ./install.sh`.
+
 ### Manual install
 
 1. Install zsh and [GNU Stow](https://www.gnu.org/software/stow/)

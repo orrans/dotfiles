@@ -1,0 +1,2 @@
+# dotfiles are consumed by zsh/bash/tmux: always LF, on every platform
+* text=auto eol=lf

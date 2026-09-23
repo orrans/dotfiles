@@ -17,9 +17,13 @@ addalias() {
 
 source "$HOME/.local/share/zsh/plugins/local/common/os_utils.zsh"
 
-# WSL equivalents for macOS commands
+# WSL / Windows equivalents for macOS commands
 if is_wsl 2>/dev/null; then
   alias open="wslview"
+  alias pbcopy="clip.exe"
+  alias pbpaste="powershell.exe -command 'Get-Clipboard' | tr -d '\r'"
+elif is_windows; then
+  alias open="start"
   alias pbcopy="clip.exe"
   alias pbpaste="powershell.exe -command 'Get-Clipboard' | tr -d '\r'"
 fi
@@ -54,7 +58,7 @@ alias mv="mv -iv"
 alias mkdir="mkdir -pv"
 
 # output pipes
-if is_wsl 2>/dev/null; then
+if is_wsl 2>/dev/null || is_windows; then
   alias -g C="| clip.exe"
 else
   alias -g C="| pbcopy"
@@ -76,7 +80,7 @@ alias -g NE="2> /dev/null"
 alias -g NUL="> /dev/null 2>&1"
 alias -g P="2>&1| pygmentize"
 alias -g J="| jq"
-if is_wsl 2>/dev/null; then
+if is_wsl 2>/dev/null || is_windows; then
   alias to-clipboard="clip.exe"
 else
   alias to-clipboard="pbcopy"
@@ -236,7 +240,7 @@ done
 
 # general
 alias serve="open http://localhost:\${PORT:-3001} & http-server -p \${PORT:-3001}"
-if is_wsl 2>/dev/null; then
+if is_wsl 2>/dev/null || is_windows; then
   alias afk="rundll32.exe user32.dll,LockWorkStation"
 else
   alias afk="/System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend"

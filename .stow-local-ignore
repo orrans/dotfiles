@@ -1,5 +1,6 @@
 \.git
 \.gitignore
+\.gitattributes
 \.stow-local-ignore
 \.DS_Store
 \.claude/settings\.local\.json
