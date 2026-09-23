@@ -19,5 +19,6 @@ var/log/sofmani
 /.config/tmux/plugins
 .claude/settings.local.json
 .claude/settings.json
+.claude/skills/synced/
 Library/pnpm
 __pycache__
