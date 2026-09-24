@@ -330,6 +330,13 @@ install:
   - name: yq
     type: brew
 
+  # mason unpacks most of its downloads with unzip. Any unzip on PATH will do —
+  # macOS ships one — so the formula is only reached for when the machine has none.
+  - name: unzip
+    type: brew
+    check_installed: command -v unzip
+    check_has_update: false
+
   - name: direnv
     type: brew
 
@@ -544,6 +551,10 @@ install:
       update_command: fnm install --lts && fnm default lts-latest
 
   - name: pyenv
+    type: brew
+
+  # mason builds gopls with `go install`
+  - name: go
     type: brew
 
   - name: uv
