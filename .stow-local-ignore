@@ -6,6 +6,7 @@
 \.claude/settings\.local\.json
 \.claude/settings\.base\.json
 \.claude/settings-merge\.sh
+\.config/alacritty/install-windows\.sh
 \.device_uid
 \.github
 exports\.zsh

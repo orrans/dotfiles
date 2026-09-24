@@ -49,10 +49,15 @@ whether it should be symlinked (add nothing) or sourced (add a regex to `.stow-l
   plugin and are the right way to reference colors — don't hard-code hex.
 - **Alacritty** — `.config/alacritty/shared.toml` holds fonts, colors and platform-neutral
   bindings; `alacritty.toml` is the macOS entry (Cmd/Opt bindings) and `windows.toml` the Windows
-  binding set (Cmd→Ctrl, Cmd+Shift→Ctrl+Shift, Opt→Ctrl+Alt). Both import `shared.toml`. On Windows
-  `install.sh` writes `%APPDATA%\alacritty\alacritty.toml` as an entry file that imports
-  `windows.toml` from the WSL dotfiles — never edit that generated file. TOML `chars` values use
-  `\uXXXX` escapes; the Write/Edit tools decode those into raw bytes, so write them via a script.
+  binding set (Cmd→Ctrl, Cmd+Shift→Ctrl+Shift, Opt→Ctrl+Alt). Both import `shared.toml`. Alacritty on
+  Windows reads `%APPDATA%\alacritty\alacritty.toml` and nothing else — the stow symlinks under
+  `~/.config/alacritty` never reach it. `.config/alacritty/install-windows.sh` generates that entry
+  file so it imports `windows.toml` from the WSL checkout and launches `wsl.exe`; the
+  `alacritty-config` sofmani step and `install.sh` both call it, and it is the only thing that
+  should write it. TOML `chars` values use `\uXXXX` escapes; the Write/Edit tools decode those into
+  raw bytes, so write them via a script. Binding `key` values are winit names (`Enter`, `Backspace`,
+  `Digit`-less plain `"1"`), and a binding with `Shift` matches the *shifted* character — Ctrl+Shift+0
+  is `key = ")"`, Ctrl+Shift+= is `key = "+"`.
 - **Neovim** — entry at `.config/nvim/init.lua`, all user config under `.config/nvim/lua/casraf/`,
   plugins under `.config/nvim/lua/casraf/plugins/` (lazy.nvim). The README has a per-plugin map;
   consult it before adding new plugin files.

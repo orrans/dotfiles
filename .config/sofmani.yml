@@ -45,6 +45,20 @@ install:
     opts:
       command: sh "$DOTFILES/.claude/settings-merge.sh" && stow -R -d "$DOTFILES" -t ~ .
       update_command: sh "$DOTFILES/.claude/settings-merge.sh" && stow -R -d "$DOTFILES" -t ~ .
+  - name: alacritty-config
+    type: shell
+    tags: config alacritty
+    # Alacritty is a Windows application even when the shell it launches is WSL,
+    # and it reads %APPDATA%\alacritty\alacritty.toml only — the stow symlinks
+    # under ~/.config/alacritty never reach it. Generate that entry file so it
+    # imports this repo's windows.toml.
+    enabled: 'command -v wslpath >/dev/null 2>&1 || command -v cygpath >/dev/null 2>&1'
+    check_installed: sh "$DOTFILES/.config/alacritty/install-windows.sh" --check
+    check_has_update: '! sh "$DOTFILES/.config/alacritty/install-windows.sh" --check'
+    opts:
+      command: sh "$DOTFILES/.config/alacritty/install-windows.sh"
+      update_command: sh "$DOTFILES/.config/alacritty/install-windows.sh"
+
 
   - name: osx-defaults
     type: shell
