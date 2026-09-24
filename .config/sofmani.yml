@@ -367,6 +367,11 @@ install:
 
   - name: fd
     type: brew
+  # fzf-lua drives its files and grep pickers through rg
+  - name: ripgrep
+    type: brew
+    bin_name: rg
+
 
   - name: superfile
     type: brew
