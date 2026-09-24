@@ -85,6 +85,11 @@ if [ -d "$HOME/.local/share/fnm" ]; then
   FNM_PATH="$HOME/.local/share/fnm"
   export PATH="$FNM_PATH:$PATH"
 fi
+# `fnm env` only exports a node bin dir for shells that run it after node exists,
+# so a process that installs node itself (sofmani) never sees npm. This alias
+# path resolves through the default symlink the moment one is set, so it stays
+# valid for the rest of the process regardless of ordering.
+export PATH="$HOME/.local/share/fnm/aliases/default/bin:$PATH"
 if [[ -f $(which fnm) ]]; then
   eval "`fnm env`"
   # Only set the default alias once. Running this on every startup races when
