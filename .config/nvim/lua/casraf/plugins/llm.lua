@@ -11,6 +11,7 @@ return {
   },
   {
     "zbirenbaum/copilot.lua",
+    enabled = false,
     dependencies = {
       "zbirenbaum/copilot-cmp",
     },
@@ -78,6 +79,7 @@ return {
   },
   {
     "Exafunction/windsurf.nvim",
+    enabled = false,
     dependencies = {
       "nvim-lua/plenary.nvim",
       "hrsh7th/nvim-cmp",
