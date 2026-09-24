@@ -12,8 +12,7 @@ defaults:
 
 machine_aliases:
   work: b0a592956c48b3b9
-  spider: d0de2a71060c023e
-  planck: 0f5d6c09c377537f
+  desktop: 6ef390b6a0f0095b
 
 install:
   # ----------------------------------------------------------------------
@@ -45,6 +44,7 @@ install:
     opts:
       command: sh "$DOTFILES/.claude/settings-merge.sh" && stow -R -d "$DOTFILES" -t ~ .
       update_command: sh "$DOTFILES/.claude/settings-merge.sh" && stow -R -d "$DOTFILES" -t ~ .
+
   - name: alacritty-config
     type: shell
     tags: config alacritty
@@ -58,7 +58,6 @@ install:
     opts:
       command: sh "$DOTFILES/.config/alacritty/install-windows.sh"
       update_command: sh "$DOTFILES/.config/alacritty/install-windows.sh"
-
 
   - name: osx-defaults
     type: shell
@@ -367,11 +366,11 @@ install:
 
   - name: fd
     type: brew
+
   # fzf-lua drives its files and grep pickers through rg
   - name: ripgrep
     type: brew
     bin_name: rg
-
 
   - name: superfile
     type: brew
@@ -427,8 +426,6 @@ install:
     type: group
     platforms:
       only: ['macos']
-    machines:
-      only: ['m1']
     frequency: 4w
     steps:
       - name: cmake
@@ -493,8 +490,6 @@ install:
     type: brew
     platforms:
       only: ['macos']
-    machines:
-      only: ['m1']
 
   - name: lefthook
     type: brew
@@ -705,7 +700,7 @@ install:
     type: shell
     tags: mcp claude
     machines:
-      only: ['m1']
+      only: ['desktop']
     frequency: 1w
     # Installed as a persistent uv tool rather than run through uvx: uvx
     # re-resolves the latest release on every MCP server launch, upstream ships
