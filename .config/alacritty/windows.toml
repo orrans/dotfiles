@@ -26,13 +26,13 @@ action = "None"
 
 # Increase font size: Ctrl+Shift+=
 [[keyboard.bindings]]
-key = "Plus"
+key = "+"
 mods = "Control|Shift"
 action = "IncreaseFontSize"
 
 # Reset font size: Ctrl+Shift+0
 [[keyboard.bindings]]
-key = "Key0"
+key = ")"
 mods = "Control|Shift"
 action = "ResetFontSize"
 
@@ -90,7 +90,7 @@ chars = "\u0002c"
 
 # Set tmux split equal: Ctrl+=
 [[keyboard.bindings]]
-key = "Equals"
+key = "="
 mods = "Control"
 chars = "\u0002E"
 
@@ -164,6 +164,6 @@ chars = "\u001b\u001b gs\n"
 
 # Delete entire row: Ctrl+Backspace
 [[keyboard.bindings]]
-key = "Back"
+key = "Backspace"
 mods = "Control"
 chars = "\u0015"

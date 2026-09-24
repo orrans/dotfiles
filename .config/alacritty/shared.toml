@@ -111,63 +111,75 @@ color = "#f5e0dc"
 
 # Select tmux window 1-9,0: Ctrl+1-9,0
 [[keyboard.bindings]]
-key = "Key1"
+key = "1"
 mods = "Control"
 chars = "\u00021"
 
 [[keyboard.bindings]]
-key = "Key2"
+key = "2"
 mods = "Control"
 chars = "\u00022"
 
 [[keyboard.bindings]]
-key = "Key3"
+key = "3"
 mods = "Control"
 chars = "\u00023"
 
 [[keyboard.bindings]]
-key = "Key4"
+key = "4"
 mods = "Control"
 chars = "\u00024"
 
 [[keyboard.bindings]]
-key = "Key5"
+key = "5"
 mods = "Control"
 chars = "\u00025"
 
 [[keyboard.bindings]]
-key = "Key6"
+key = "6"
 mods = "Control"
 chars = "\u00026"
 
 [[keyboard.bindings]]
-key = "Key7"
+key = "7"
 mods = "Control"
 chars = "\u00027"
 
 [[keyboard.bindings]]
-key = "Key8"
+key = "8"
 mods = "Control"
 chars = "\u00028"
 
 [[keyboard.bindings]]
-key = "Key9"
+key = "9"
 mods = "Control"
 chars = "\u00029"
 
 [[keyboard.bindings]]
-key = "Key0"
+key = "0"
 mods = "Control"
 chars = "\u00020"
 
+# Toggle between the two most recently used tmux sessions: Ctrl+Tab
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control"
+chars = "\u0002\u0009"
+
 # Delete previous word: Alt+Backspace
 [[keyboard.bindings]]
-key = "Back"
+key = "Backspace"
 mods = "Alt"
 chars = "\u0017"
 
 # Shift+Enter sends Escape+Return
 [[keyboard.bindings]]
-key = "Return"
+key = "Enter"
 mods = "Shift"
 chars = "\u001b\r"
+
+# Numpad Enter sends Return. The built-in binding emits a line feed, which tmux
+# reads as C-j and takes as "select the pane below".
+[[keyboard.bindings]]
+key = "NumpadEnter"
+chars = "\r"
