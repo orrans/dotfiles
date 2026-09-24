@@ -1,7 +1,7 @@
 .config:
   include:
     - ./tmux_local.yml
-  projects_path: ~/Dev
+  projects_path: ~/dev
   named_layouts:
     claude:
       cwd: .
@@ -17,7 +17,7 @@
               clock: true
 
 general:
-  root: ~/Dev
+  root: ~/dev
 
 df:
   root: ~/.dotfiles
