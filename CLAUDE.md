@@ -46,7 +46,11 @@ whether it should be symlinked (add nothing) or sourced (add a regex to `.stow-l
   pane styles), `.config/tmux/modules/*.tmux` (status bar segments). Plugin manager is **tpack**
   (not tpm) — see the `run 'tpack init'` line at the bottom of `tmux.conf`. Catppuccin theme
   variables (e.g. `#{@thm_sky}`, `#{@thm_teal}`, `#{@thm_surface_0}`) come from the catppuccin/tmux
-  plugin and are the right way to reference colors — don't hard-code hex.
+  plugin and are the right way to reference colors — don't hard-code hex. Plugins are cloned into
+  `~/.config/tmux/plugins` and must stay out of the repo: stow never links a `.git` directory, so a
+  copy under `.config/tmux/plugins/` gets mirrored into `$HOME` as a symlink farm with no `.git`,
+  which tpack reads as "not installed" and then fails to clone over. `.config/tmux/plugins` is in
+  both `.gitignore` and `.stow-local-ignore` to keep that from happening.
 - **Alacritty** — `.config/alacritty/shared.toml` holds fonts, colors and platform-neutral
   bindings; `alacritty.toml` is the macOS entry (Cmd/Opt bindings) and `windows.toml` the Windows
   binding set (Cmd→Ctrl, Cmd+Shift→Ctrl+Shift, Opt→Ctrl+Alt). Both import `shared.toml`. Alacritty on
