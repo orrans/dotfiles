@@ -25,13 +25,19 @@ return {
     local dap = require 'dap'
     local dapui = require 'dapui'
 
+    -- dapDebugServer.js listens on the port given as its first argument, so the
+    -- placeholder has to be passed through as well as declared — left off, the server
+    -- picks a port of its own and nothing ever connects to it.
     dap.adapters["pwa-node"] = {
       type = "server",
       host = "localhost",
       port = "${port}",
       executable = {
         command = "node",
-        args = { vim.fn.stdpath('data') .. '/mason/packages/js-debug-adapter' },
+        args = {
+          vim.fn.stdpath('data') .. '/mason/packages/js-debug-adapter/js-debug/src/dapDebugServer.js',
+          "${port}",
+        },
       }
     }
 
@@ -97,12 +103,7 @@ return {
       -- see mason-nvim-dap README for more information
       handlers = {},
 
-      -- You'll need to check that you have the required things installed
-      -- online, please don't ask me how to install them :)
-      ensure_installed = {
-        -- Update this to ensure that you have the debuggers for the langs you want
-        'js-debug-adapter',
-      },
+      -- Adapter packages are installed from the list in mason.lua.
     }
 
     -- Basic debugging keymaps, feel free to change to your liking!

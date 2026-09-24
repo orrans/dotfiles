@@ -53,7 +53,7 @@ install:
     check_installed: test $(defaults read -g PMPrintingExpandedStateForPrint) -eq 1
     check_has_update: test $(defaults read -g PMPrintingExpandedStateForPrint) -eq 1
     platforms:
-      only: ["macos"]
+      only: ['macos']
     opts:
       command: |
         defaults write -g PMPrintingExpandedStateForPrint -bool TRUE
@@ -69,9 +69,9 @@ install:
     # heal all three. check_installed is the "healthy?" predicate, so the
     # command only runs when something has actually drifted.
     machines:
-      only: ["spider"]
+      only: ['spider']
     platforms:
-      only: ["linux"]
+      only: ['linux']
     check_installed: |
       repo="$(brew --repository 2>/dev/null)" || exit 0
       pref="$(brew --prefix 2>/dev/null)"
@@ -112,7 +112,7 @@ install:
     type: shell
     tags: git
     platforms:
-      except: ["windows"]
+      except: ['windows']
     check_installed: 'gpg --list-keys | grep -q "$GITHUB_GPG_KEY_ID"'
     opts:
       command: curl https://github.com/web-flow.gpg | gpg --import
@@ -130,7 +130,7 @@ install:
   - name: gh
     type: brew
     machines:
-      except: ["planck"]
+      except: ['planck']
 
   - name: glab
     type: group
@@ -142,7 +142,7 @@ install:
     type: shell
     tags: git
     platforms:
-      except: ["windows"]
+      except: ['windows']
     check_installed: (git config --global user.name && git config --global user.email && git config --global user.signingkey) > /dev/null 2>&1
     opts:
       command: |
@@ -284,7 +284,7 @@ install:
   - name: devtui
     type: github-release
     platforms:
-      except: ["windows"] # no Windows release asset
+      except: ['windows'] # no Windows release asset
     opts:
       repository: skatkov/devtui
       strategy: tar
@@ -293,16 +293,27 @@ install:
         macos: devtui_Darwin_{{ .ArchAlias }}.tar.gz
         linux: devtui_Linux_{{ .ArchAlias }}.tar.gz
 
+  # The release lookups run unauthenticated where there is no GITHUB_TOKEN: curl
+  # drops a header carrying no value, whereas a blank "Bearer" earns a 401.
   - name: atuin
     type: shell
     platforms:
-      except: ["windows"] # install.sh installs the Windows build
-    check_has_update: '[ "$(cat ~/.cache/sofmani/atuin-version.txt 2>/dev/null)" != "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name)" ]'
-    post_install: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
-    post_update: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
+      except: ['windows'] # install.sh installs the Windows build
+    check_has_update: '[ "$(cat ~/.cache/sofmani/atuin-version.txt 2>/dev/null)" != "$(curl -fsSL -H "Authorization:${GITHUB_TOKEN:+ Bearer $GITHUB_TOKEN}" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name)" ]'
+    post_install: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization:${GITHUB_TOKEN:+ Bearer $GITHUB_TOKEN}" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
+    post_update: 'mkdir -p ~/.cache/sofmani && curl -fsSL -H "Authorization:${GITHUB_TOKEN:+ Bearer $GITHUB_TOKEN}" https://api.github.com/repos/atuinsh/atuin/releases/latest | jq -r .tag_name > ~/.cache/sofmani/atuin-version.txt'
     opts:
       command: curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive
-      update_command: atuin-update
+      # atuin-update arrives with the setup script into ~/.atuin/bin, a directory
+      # that reaches PATH only through exports.zsh — and holds nothing at all when
+      # atuin came from a package manager. The installer upgrades in place, so it
+      # covers whatever the binary can't.
+      update_command: |
+        if [ -x "$HOME/.atuin/bin/atuin-update" ]; then
+          "$HOME/.atuin/bin/atuin-update"
+        else
+          curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive
+        fi
 
   - name: git-delta
     type: brew
@@ -311,7 +322,7 @@ install:
   - name: rsync
     type: brew
     platforms:
-      only: ["macos"]
+      only: ['macos']
 
   - name: jq
     type: brew
@@ -349,7 +360,7 @@ install:
   - name: hammerspoon
     type: brew
     platforms:
-      only: ["macos"]
+      only: ['macos']
     opts:
       cask: true
 
@@ -371,19 +382,27 @@ install:
   - name: pandoc
     type: brew
 
+  # mdp renders through pandoc and serves through python3. Any python3 on PATH
+  # answers for it — the system one, pyenv's, or brew's — so the formula is only
+  # reached for when the machine has none, and brew never owns the upgrade.
+  - name: python3
+    type: brew
+    check_installed: command -v python3
+    check_has_update: false
+
   - name: nextcloud-talk
     type: brew
     platforms:
-      only: ["macos"]
+      only: ['macos']
     enabled: test "$(uname -s)" = Darwin # defaults.type.brew.platforms overrides per-installer platforms
     check_installed: test -d "/Applications/Nextcloud Talk.app"
 
   - name: aseprite
     type: group
     platforms:
-      only: ["macos"]
+      only: ['macos']
     machines:
-      only: ["m1"]
+      only: ['m1']
     frequency: 4w
     steps:
       - name: cmake
@@ -447,9 +466,9 @@ install:
   - name: fastlane
     type: brew
     platforms:
-      only: ["macos"]
+      only: ['macos']
     machines:
-      only: ["m1"]
+      only: ['m1']
 
   - name: lefthook
     type: brew
@@ -480,9 +499,9 @@ install:
     type: shell
     tags: security
     machines:
-      only: ["spider"]
+      only: ['spider']
     platforms:
-      only: ["linux"]
+      only: ['linux']
     # lynis runs as root, so it must live system-wide and be root-owned (it
     # refuses to execute user-owned files as root). Clone into /usr/local/share
     # and drop a wrapper on root's PATH — lynis resolves its include/ dir
@@ -510,6 +529,19 @@ install:
 
   - name: fnm
     type: brew
+
+  - name: node
+    type: shell
+    tags: node
+    check_installed: fnm exec --using=lts-latest node --version > /dev/null 2>&1
+    check_has_update:
+      '[ "$(fnm exec --using=lts-latest node --version 2>/dev/null)" != "$(fnm ls-remote --lts |
+      tail -1 | cut -d" " -f1)" ]'
+    confirm_install: true
+    confirm_update: true
+    opts:
+      command: fnm install --lts && fnm default lts-latest
+      update_command: fnm install --lts && fnm default lts-latest
 
   - name: pyenv
     type: brew
@@ -572,18 +604,18 @@ install:
   #   bin_name: claude
   #   type: npm
   #   platforms:
-  #     only: ["linux"]
+  #     only: ['linux']
 
   - name: opencode
     type: brew
     enabled: false
 
-  - name: "@google/gemini-cli"
+  - name: '@google/gemini-cli'
     bin_name: gemini
     type: npm
     enabled: false
 
-  - name: "@openai/codex"
+  - name: '@openai/codex'
     bin_name: codex
     type: npm
     enabled: false
@@ -630,7 +662,7 @@ install:
   - name: pipx
     type: brew
     platforms:
-      except: ["windows"] # pipx comes from brew
+      except: ['windows'] # pipx comes from brew
     post_install: sudo "$(command -v pipx)" ensurepath --global # root PATH lacks brew
 
   - name: jedi-language-server
@@ -643,7 +675,7 @@ install:
     type: shell
     tags: mcp claude
     machines:
-      only: ["m1"]
+      only: ['m1']
     frequency: 1w
     # Installed as a persistent uv tool rather than run through uvx: uvx
     # re-resolves the latest release on every MCP server launch, upstream ships
