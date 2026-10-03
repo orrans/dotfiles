@@ -45,6 +45,9 @@ alias la="eza -lAh --icons always"
 alias l="eza -A --icons always"
 alias tree="eza -h --color=auto --icons always --tree"
 
+alias cat="bat"
+alias grep="rg --color=auto"
+
 # editor
 alias v="nvim ."
 alias vi="nvim"
@@ -100,6 +103,15 @@ alias grao="git remote add origin"
 alias gchen="git config user.name 'Chen Asraf'; git config user.email casraf@pm.me"
 alias lg="lazygit"
 grac() { git remote add origin "git@github.com:chenasraf/$1.git"; }
+cdgr() {
+  local root
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    print -u2 "cdgr: not a git repository"
+    return 1
+  }
+  [[ "$PWD" == "$root" ]] && return 0
+  cd "$root"
+}
 alias gresetdate='GIT_COMMITTER_DATE="$(date)" git commit --amend --no-edit --date="$(date)"'
 
 # home/dotfiles
@@ -276,6 +288,27 @@ fbcurl() {
     export FBPWD
   fi
   curl -fsSL -H "Authorization: Bearer $FBPWD" "$@"
+}
+
+# Load the encrypted secrets from an env file into this shell. Their private key
+# lives in the OS keychain, so no file on disk holds a usable copy; the price is
+# ~700ms per decrypt, too slow to sit on a startup path — exports.zsh, and with it
+# _local.zsh, is re-sourced on every statusline render.
+loadenv() {
+  local file="${1:-$DOTFILES/.env}" json key val
+  local -a loaded
+  json="$(dotenvx get -f "$file" --strict 2>/dev/null)" || {
+    print -ru2 "loadenv: could not decrypt $file"
+    return 1
+  }
+  # Values round-trip through base64 so quotes, $ and newlines survive the shell.
+  while IFS=$'\t' read -r key val; do
+    export "$key=$(printf '%s' "$val" | base64 -d)"
+    loaded+=("$key")
+  done < <(
+    jq -r 'to_entries[] | select(.key != "DOTENV_PUBLIC_KEY") | [.key, (.value | @base64)] | @tsv' <<<"$json"
+  )
+  print -ru2 "loadenv: ${loaded[*]}"
 }
 
 alias fdg="fd --glob"

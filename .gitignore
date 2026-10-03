@@ -22,3 +22,6 @@ var/log/sofmani
 .claude/skills/synced/
 Library/pnpm
 __pycache__
+/.envrc
+/.env.keys
+/.env
