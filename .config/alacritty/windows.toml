@@ -152,11 +152,11 @@ key = "P"
 mods = "Control"
 chars = "\u001b\u001b ff\n"
 
-# Open lazygit in neovim: Ctrl+G
+# Open lazygit in a tmux popup: Ctrl+G
 [[keyboard.bindings]]
 key = "G"
 mods = "Control"
-chars = "\u001b\u001b gs\n"
+chars = "\u0002g"
 
 # ==============================================================================
 # Terminal bindings
