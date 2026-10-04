@@ -152,10 +152,10 @@ key = "P"
 mods = "Control"
 chars = "\u001b\u001b ff\n"
 
-# Open lazygit in a tmux popup: Ctrl+G
+# Open lazygit in a tmux popup: Ctrl+Shift+G
 [[keyboard.bindings]]
 key = "G"
-mods = "Control"
+mods = "Control|Shift"
 chars = "\u0002g"
 
 # ==============================================================================
